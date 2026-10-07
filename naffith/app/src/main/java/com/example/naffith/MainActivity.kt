@@ -41,7 +41,7 @@ class MainActivity : Activity() {
         appendLog("أنت: $text")
         when (val action = brain.understand(text)) {
             is LocalAction.OpenApp -> openInstalledApp(action.query)
-            is LocalAction.OpenAppAndSearch -> openInstalledAppAndSearch(action.appQuery, action.searchQuery)
+            is LocalAction.OpenAppAndSearch -> openInstalledAppAndSearch(action.appQuery, action.searchQuery, action.playFirst)
             is LocalAction.OpenAppAndCalculate -> openInstalledAppAndCalculate(action.appQuery, action.expression)
             is LocalAction.SearchYoutube -> searchYoutube(action.query, action.playFirst)
             is LocalAction.SearchChrome -> searchChrome(action.query, action.images)
@@ -70,7 +70,7 @@ class MainActivity : Activity() {
         appendLog("نفّذ: تم فتح ${app.label}")
     }
 
-    private fun openInstalledAppAndSearch(appQuery: String, searchQuery: String) {
+    private fun openInstalledAppAndSearch(appQuery: String, searchQuery: String, playFirst: Boolean) {
         val app = catalog.find(appQuery)
         if (app == null) {
             appendLog("نفّذ: لم أجد تطبيق «$appQuery». اكتب «ما هي التطبيقات المثبتة» للتأكد من الاسم.")
@@ -81,9 +81,10 @@ class MainActivity : Activity() {
             appendLog("نفّذ: لا أستطيع تشغيل ${app.label}.")
             return
         }
-        NaffithAccessibilityService.requestSearch(app.packageName, searchQuery)
+        NaffithAccessibilityService.requestSearch(app.packageName, searchQuery, playFirst)
         startActivity(intent)
-        appendLog("نفّذ: فتحت ${app.label} وسأبحث عن «$searchQuery» وأضغط Enter عبر إمكانية الوصول.")
+        appendLog(if (playFirst) "نفّذ: فتحت ${app.label} وسأبحث عن «$searchQuery» ثم أحاول تشغيل أول نتيجة."
+        else "نفّذ: فتحت ${app.label} وسأبحث عن «$searchQuery» عبر إمكانية الوصول.")
     }
 
     private fun openInstalledAppAndCalculate(appQuery: String, expression: String) {
