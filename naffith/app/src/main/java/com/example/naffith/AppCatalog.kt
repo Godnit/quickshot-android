@@ -1,64 +1,46 @@
 package com.example.naffith
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.provider.MediaStore
 
-data class InstalledApp(val packageName: String, val label: String)
+data class InstalledApp(val packageName: String, val label: String, val intent: Intent)
 
-/** يقرأ التطبيقات القابلة للتشغيل، مع أسماء بديلة عربية للتطبيقات الشائعة. */
 class AppCatalog(private val context: Context) {
-    private val packageManager: PackageManager = context.packageManager
+    private val pm = context.packageManager
 
+    @Suppress("DEPRECATION")
     fun all(): List<InstalledApp> {
-        val result = LinkedHashMap<String, InstalledApp>()
-        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        packageManager.queryIntentActivities(launcherIntent, PackageManager.MATCH_ALL).forEach { info ->
-            val packageName = info.activityInfo?.packageName ?: return@forEach
-            val label = info.loadLabel(packageManager)?.toString()?.trim().orEmpty()
-            if (label.isNotBlank()) result[packageName] = InstalledApp(packageName, label)
+        val apps = LinkedHashMap<String, InstalledApp>()
+        fun addHandlers(intent: Intent) {
+            pm.queryIntentActivities(intent, 0).forEach { info ->
+                val activity = info.activityInfo ?: return@forEach
+                if (!activity.enabled || !activity.exported) return@forEach
+                val launch = Intent(intent).setComponent(ComponentName(activity.packageName, activity.name))
+                val label = info.loadLabel(pm).toString().trim()
+                apps.putIfAbsent(activity.packageName, InstalledApp(activity.packageName, label, launch))
+            }
         }
-
-        // بعض الأجهزة لا تعرض مدير الملفات أو الكاميرا في قائمة الاختصارات،
-        // لذلك نضيف كل حزمة تملك Intent تشغيلًا أيضًا.
-        packageManager.getInstalledApplications(PackageManager.GET_META_DATA).forEach { info ->
-            val packageName = info.packageName ?: return@forEach
-            if (result.containsKey(packageName)) return@forEach
-            val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: return@forEach
-            if (launchIntent.component?.packageName != packageName) return@forEach
-            val label = info.loadLabel(packageManager)?.toString()?.trim().orEmpty()
-            if (label.isNotBlank()) result[packageName] = InstalledApp(packageName, label)
+        addHandlers(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER))
+        pm.getInstalledApplications(0).forEach { info ->
+            if (info.enabled && !apps.containsKey(info.packageName)) {
+                val launch = pm.getLaunchIntentForPackage(info.packageName) ?: return@forEach
+                apps[info.packageName] = InstalledApp(info.packageName, info.loadLabel(pm).toString().trim(), launch)
+            }
         }
-        return result.values.sortedBy { normalize(it.label) }
+        // تضاف تطبيقات النظام حتى إذا كانت بلا اختصار Launcher عادي.
+        addHandlers(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA))
+        addHandlers(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CALCULATOR))
+        addHandlers(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_GALLERY))
+        addHandlers(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"))
+        return apps.values.sortedBy { ArabicText.normalize(it.label) }
     }
 
     fun find(query: String): InstalledApp? {
-        val normalizedQuery = normalize(query)
-        if (normalizedQuery.isBlank()) return null
-        val aliases = mapOf(
-            "يوتيوب" to listOf("youtube", "يوتيوب"),
-            "كروم" to listOf("chrome", "كروم", "google chrome"),
-            "واتساب" to listOf("whatsapp", "واتساب", "whatsapp business"),
-            "ام اكس" to listOf("mx player", "mxplayer", "ام اكس", "mx"),
-            "الصور" to listOf("photos", "gallery", "الصور", "المعرض", "صور"),
-            "لقطه شاشه" to listOf("screenshot", "quickshot", "لقطة شاشة", "لقطه شاشه"),
-            "اداره الملفات" to listOf("file manager", "files", "my files", "file", "ادارة الملفات", "مدير الملفات", "الملفات", "ملفاتي"),
-            "الكاميرا" to listOf("camera", "كاميرا", "الكاميرا"),
-            "الحاسبه" to listOf("calculator", "calc", "الحاسبة", "الآلة الحاسبة", "اله حاسبه"),
-            "موسيقي play" to listOf("play music", "youtube music", "music", "موسيقى play", "موسيقي play")
-        )
-        val candidates = aliases[normalizedQuery] ?: listOf(normalizedQuery)
-        val normalizedCandidates = candidates.map(::normalize)
         val apps = all()
-
-        return apps.firstOrNull { app -> normalizedCandidates.any { normalize(app.label) == it } }
-            ?: apps.firstOrNull { app -> normalizedCandidates.any { normalize(app.label).contains(it) } }
-            ?: apps.firstOrNull { app -> normalize(app.label).contains(normalizedQuery) || normalizedQuery.contains(normalize(app.label)) }
+        val match = AppNameMatcher.find(query, apps.map { AppName(it.packageName, it.label) }) ?: return null
+        return apps.firstOrNull { it.packageName == match.packageName }
     }
-
-    private fun normalize(value: String): String = value.lowercase()
-        .replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
-        .replace('ى', 'ي').replace('ة', 'ه')
-        .replace(Regex("[ًٌٍَُِّْـ]"), "")
-        .replace(Regex("\\s+"), " ").trim()
 }

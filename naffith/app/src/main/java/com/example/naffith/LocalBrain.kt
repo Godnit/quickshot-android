@@ -1,122 +1,155 @@
 package com.example.naffith
 
-interface LocalBrain {
-    fun understand(text: String): LocalAction
-}
+interface LocalBrain { fun understand(text: String): LocalAction }
 
 sealed class LocalAction {
     data class OpenApp(val query: String) : LocalAction()
     data class OpenAppAndSearch(val appQuery: String, val searchQuery: String, val playFirst: Boolean = false) : LocalAction()
     data class OpenAppAndCalculate(val appQuery: String, val expression: String) : LocalAction()
     data class SearchYoutube(val query: String, val playFirst: Boolean) : LocalAction()
-    data class SearchChrome(val query: String, val images: Boolean) : LocalAction()
+    data class SearchChrome(val query: String, val images: Boolean, val downloadImage: Boolean = false) : LocalAction()
     data class SearchWeb(val query: String) : LocalAction()
+    data class Write(val appQuery: String?, val text: String, val submit: Boolean) : LocalAction()
+    data class Click(val label: String) : LocalAction()
     object OpenFiles : LocalAction()
     object OpenSettings : LocalAction()
     object ListApps : LocalAction()
+    object ReadScreen : LocalAction()
+    object Back : LocalAction()
+    object Home : LocalAction()
+    object Stop : LocalAction()
     object Help : LocalAction()
     data class Unknown(val originalText: String) : LocalAction()
 }
 
-/** فهم محلي للأوامر العربية، بلا API أو اتصال بخادم. */
+/** محلل محلي صغير للأوامر؛ لا يستخدم نموذجًا لغويًا أو API. */
 class RuleBasedArabicBrain : LocalBrain {
+    private val appWords = listOf(
+        "يوتيوب", "يوتيوب ميوزك", "youtube", "كروم", "chrome", "المتصفح",
+        "ام اكس", "ام اكس بلاير", "ام اكس بليير", "مشغل ام اكس", "ام اكس", "mx player", "mxplayer",
+        "الحاسبه", "الاله الحاسبه", "اله حاسبه", "الحاسبه", "calculator", "calc",
+        "اداره الملفات", "مدير الملفات", "الملفات", "ملفاتي", "files", "file manager",
+        "الكاميرا", "كاميرا", "camera", "المعرض", "الصور", "gallery", "photos"
+    )
+    private val searchVerbs = setOf("ابحث", "بحث", "دور", "فتش", "ابحت", "ابحتث")
+    private val writeVerbs = setOf("اكتب", "يكتب", "كتابه", "اكتبي")
 
     override fun understand(text: String): LocalAction {
         val original = text.trim()
         if (original.isEmpty()) return LocalAction.Unknown(original)
-        val normalized = normalize(original)
+        val n = ArabicText.normalize(original)
+        val tokens = original.split(Regex("\\s+"))
+        val keys = tokens.map { ArabicText.normalize(it.trim('،', ',', '؟', '?', '!', '.')) }
+        if (n in setOf("مساعده", "الاوامر") || n.contains("ماذا تستطيع")) return LocalAction.Help
+        if (n in setOf("توقف", "وقف", "الغاء", "الغي", "اوقف التنفيذ")) return LocalAction.Stop
+        if (n in setOf("ارجع", "رجوع", "عوده", "ارجع للخلف")) return LocalAction.Back
+        if (n in setOf("الشاشه الرئيسيه", "ارجع للرئيسيه", "افتح الرئيسيه")) return LocalAction.Home
+        if (n in setOf("اقرا الشاشه", "ما في الشاشه", "ايش في الشاشه", "ماذا علي الشاشه")) return LocalAction.ReadScreen
+        if (listOf("التطبيقات المثبته", "التطبيقات الموجوده", "التطبيقات عندي", "ايش التطبيقات", "قائمه التطبيقات", "ما هي التطبيقات").any { n.contains(it) }) return LocalAction.ListApps
 
-        if (normalized == "مساعده" || normalized.contains("ماذا تستطيع") ||
-            normalized == "الاوامر" || normalized.contains("كيف استخدمك")) return LocalAction.Help
-
-        if (normalized.contains("التطبيقات المثبته") || normalized.contains("التطبيقات الموجوده") ||
-            normalized.contains("التطبيقات عندي") || normalized.contains("ايش التطبيقات") ||
-            normalized.contains("قائمه التطبيقات") || normalized.contains("ما هي التطبيقات") ||
-            normalized.contains("ما التطبيقات")) return LocalAction.ListApps
-
-        val isSearch = containsAny(normalized, "ابحث", "بحث", "دور", "فتش")
-        val youtube = containsAny(normalized, "يوتيوب", "youtube")
-        val chrome = containsAny(normalized, "كروم", "chrome", "المتصفح")
-        val mxPlayer = containsAny(normalized, "مشغل ام اكس", "ام اكس", "mx player", "mxplayer")
-        val calculator = containsAny(normalized, "الحاسبه", "اله حاسبه", "calculator", "calc")
-
-        if (calculator) {
-            val expression = extractExpression(normalized)
-            if (expression != null) return LocalAction.OpenAppAndCalculate("الحاسبه", expression)
+        val calculator = listOf("الحاسبه", "حاسبه", "calculator", "calc").any { n.contains(it) }
+        if (calculator || keys.any { it == "احسب" || it == "واحسب" }) {
+            val expression = extractExpression(n)
+            if (expression != null) return LocalAction.OpenAppAndCalculate("الحاسبة", expression)
+            if (n.any { it.isDigit() }) return LocalAction.Unknown(original)
         }
-
-        if (isSearch && youtube) {
-            val query = extractQuery(normalized, commonSearchWords + setOf("اغنيه", "اغنية", "شغل", "شغله", "شغلها", "تشغيل", "و"))
-            if (query.isNotBlank()) {
-                val playFirst = containsAny(normalized, "شغل", "شغله", "شغلها", "تشغيل")
-                return LocalAction.SearchYoutube(query, playFirst)
+        val app = knownApp(n)
+        val searchIndex = keys.indexOfFirst { verb(it) in searchVerbs }
+        val writeIndex = keys.indexOfFirst { verb(it) in writeVerbs }
+        val play = keys.any { verb(it) in setOf("شغلها", "شغله", "شغل", "تشغيل") }
+        if (searchIndex >= 0 && (writeIndex < 0 || searchIndex < writeIndex)) {
+            val query = extractPayload(tokens, keys, searchIndex, true)
+            if (query.isBlank()) return LocalAction.Unknown(original)
+            when (app) {
+                "يوتيوب" -> return LocalAction.SearchYoutube(removeSongPrefix(query), play)
+                "كروم" -> {
+                    val images = Regex("(?:^| )صور(?:ه| )").containsMatchIn(ArabicText.normalize(query)) || keys.any { it == "صور" || it == "صوره" }
+                    val download = keys.any { verb(it) in setOf("حمل", "نزل", "تحميل", "تنزيل") }
+                    val cleaned = query.replace(Regex("^(?:صور|صورة|صوره)\\s+"), "")
+                    return LocalAction.SearchChrome(cleaned, images, download && images)
+                }
+                "ام اكس" -> return LocalAction.OpenAppAndSearch(app, removeSongPrefix(query), play)
+                null -> {
+                    val target = searchTarget(tokens, keys, searchIndex)
+                    if (target != null && ArabicText.normalize(target) !in setOf("جوجل", "google", "الويب", "الانترنت")) {
+                        return LocalAction.OpenAppAndSearch(target, query, play)
+                    }
+                    return LocalAction.SearchWeb(query)
+                }
+                else -> return LocalAction.OpenAppAndSearch(app, query, play)
             }
         }
-        if (isSearch && chrome) {
-            val images = containsAny(normalized, "صور", "صوره", "صورة", "صورًا")
-            val query = extractQuery(normalized, commonSearchWords + setOf(
-                "صور", "صوره", "صورة", "في", "و", "حمل", "تحميل", "نزل", "نزّل", "عشوائيه", "عشوائي", "الصوره"
-            ))
-            if (query.isNotBlank()) return LocalAction.SearchChrome(query, images)
+        if (writeIndex >= 0) {
+            val query = extractPayload(tokens, keys, writeIndex, false)
+            if (query.isBlank()) return LocalAction.Unknown(original)
+            val submit = keys.any { verb(it) in setOf("ابحث", "بحث", "تم", "انتر", "enter") }
+            return LocalAction.Write(app, query, submit)
         }
-        if (isSearch && mxPlayer) {
-            val query = extractQuery(normalized, commonSearchWords + setOf("مشغل", "ام", "اكس", "mx", "player", "mxplayer", "شغل", "شغله", "شغلها", "و"))
-            if (query.isNotBlank()) {
-                val playFirst = containsAny(normalized, "شغل", "شغله", "شغلها", "تشغيل")
-                return LocalAction.OpenAppAndSearch("ام اكس", query, playFirst)
-            }
+        if (keys.firstOrNull()?.let { verb(it) } in setOf("اضغط", "انقر")) {
+            val label = tokens.drop(1).joinToString(" ").trim()
+            if (label.isNotEmpty()) return LocalAction.Click(label)
         }
-        if (isSearch && containsAny(normalized, "جوجل", "google", "الويب", "الانترنت")) {
-            val query = extractQuery(normalized, commonSearchWords + setOf("جوجل", "google", "الويب", "الانترنت", "و"))
-            if (query.isNotBlank()) return LocalAction.SearchWeb(query)
-        }
-
-        if (containsAny(normalized, "اداره الملفات", "مدير الملفات", "الملفات", "ملفاتي", "file manager", "files", "التنزيلات")) return LocalAction.OpenFiles
-        if (containsAny(normalized, "الاعدادات", "الضبط", "settings")) return LocalAction.OpenSettings
-
-        if (containsAny(normalized, "يوتيوب", "youtube")) return LocalAction.OpenApp("يوتيوب")
-        if (containsAny(normalized, "كروم", "chrome", "المتصفح")) return LocalAction.OpenApp("كروم")
-        if (containsAny(normalized, "واتساب", "whatsapp")) return LocalAction.OpenApp("واتساب")
-        if (containsAny(normalized, "الاستوديو", "الصور", "المعرض", "gallery")) return LocalAction.OpenApp("الصور")
-        if (containsAny(normalized, "الكاميرا", "camera")) return LocalAction.OpenApp("الكاميرا")
-        if (mxPlayer) return LocalAction.OpenApp("ام اكس")
-        if (calculator) return LocalAction.OpenApp("الحاسبه")
-
-        if (containsAny(normalized, "افتح", "شغل", "شغل لي", "ابدأ")) {
-            val query = extractQuery(normalized, setOf("افتح", "فتح", "تطبيق", "التطبيق", "شغل", "شغل لي", "ابدأ", "لي"))
+        if (app == "الملفات") return LocalAction.OpenFiles
+        if (listOf("الاعدادات", "الضبط", "settings").any { n.contains(it) }) return LocalAction.OpenSettings
+        if (app != null) return LocalAction.OpenApp(app)
+        if (keys.firstOrNull()?.let { verb(it) } in setOf("افتح", "فتح", "شغل", "ابدأ", "ابدا")) {
+            val query = tokens.drop(1).dropWhile { ArabicText.normalize(it) in setOf("لي", "تطبيق", "التطبيق") }.joinToString(" ")
             if (query.isNotBlank()) return LocalAction.OpenApp(query)
         }
-
         return LocalAction.Unknown(original)
     }
 
-    private val commonSearchWords = setOf("افتح", "ابحث", "لي", "عن", "بحث", "دور", "فتش", "في")
-
-    private fun extractQuery(normalized: String, ignoredWords: Set<String>): String = normalized
-        .split(" ")
-        .map { it.trim('،', ',', '.', '؟', '?', '!') }
-        .filter { it.isNotBlank() && !isIgnoredToken(it, ignoredWords) }
-        .joinToString(" ")
-
-    private fun isIgnoredToken(token: String, ignoredWords: Set<String>): Boolean {
-        if (token in ignoredWords) return true
-        // الكتابة العربية تلصق الواو أو الباء بالفعل: «وأبحث»، «وحمل».
-        return (token.startsWith("و") || token.startsWith("ب")) && token.drop(1) in ignoredWords
+    private fun knownApp(n: String): String? {
+        val padded = " $n "
+        val found = appWords.firstOrNull { padded.contains(" $it ") || padded.contains(" و$it ") } ?: return null
+        return when {
+            found.contains("يوتيوب") || found == "youtube" -> "يوتيوب"
+            found in setOf("كروم", "chrome", "المتصفح") -> "كروم"
+            found.contains("اكس") || found.startsWith("mx") -> "ام اكس"
+            found.contains("حاسبه") || found in setOf("calculator", "calc") -> "الحاسبة"
+            found.contains("ملف") || found in setOf("files", "file manager") -> "الملفات"
+            found.contains("كاميرا") || found == "camera" -> "الكاميرا"
+            else -> "الصور"
+        }
     }
 
-    private fun extractExpression(normalized: String): String? {
-        return Regex("[0-9]+(?:\\s*[+\\-*/]\\s*[0-9]+)+")
-            .find(normalized)?.value?.replace(" ", "")
+    private fun verb(key: String): String {
+        val verbs = searchVerbs + writeVerbs + setOf("شغل", "شغلها", "شغله", "تشغيل", "حمل", "نزل", "تحميل", "تنزيل", "اضغط", "انقر", "افتح", "تم", "انتر", "enter")
+        return if (key.startsWith("و") && key.drop(1) in verbs) key.drop(1) else key
     }
 
-    private fun containsAny(text: String, vararg values: String): Boolean = values.any { text.contains(it) }
+    private fun extractPayload(tokens: List<String>, keys: List<String>, index: Int, search: Boolean): String {
+        var start = index + 1
+        val about = (start until keys.size).firstOrNull { keys[it] == "عن" }
+        if (about != null && search) start = about + 1
+        else {
+            // احذف مقدمة الأمر فقط؛ لا تحذف الكلمات المماثلة من عنوان البحث.
+            val routeWords = appWords.flatMap { it.split(' ') }.toSet() + setOf("في", "لي", "تطبيق", "التطبيق", "جوجل", "google", "الويب", "الانترنت")
+            while (start < keys.size && keys[start] in routeWords) start++
+            if (keys.getOrNull(start) == "عن") start++
+        }
+        var end = tokens.size
+        val trailingVerbs = setOf("شغلها", "شغله", "حمل", "نزل", "تحميل", "تنزيل", "اضغط", "انقر")
+        for (i in start until keys.size) {
+            if (verb(keys[i]) in trailingVerbs && (keys[i].startsWith("و") || keys.getOrNull(i - 1) in setOf("ثم", "و", "بعدين"))) {
+                end = if (keys.getOrNull(i - 1) in setOf("ثم", "و", "بعدين")) i - 1 else i
+                break
+            }
+        }
+        return tokens.subList(start.coerceAtMost(end), end).joinToString(" ").trim(' ', '،', ',', '"', '«', '»')
+    }
 
-    private fun normalize(value: String): String = value
-        .lowercase()
-        .replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
-        .replace('ى', 'ي').replace('ة', 'ه')
-        .replace('٠', '0').replace('١', '1').replace('٢', '2').replace('٣', '3').replace('٤', '4')
-        .replace('٥', '5').replace('٦', '6').replace('٧', '7').replace('٨', '8').replace('٩', '9')
-        .replace(Regex("[ًٌٍَُِّْـ]"), "")
-        .replace(Regex("\\s+"), " ").trim()
+    private fun searchTarget(tokens: List<String>, keys: List<String>, index: Int): String? {
+        if (keys.getOrNull(index + 1) != "في") return null
+        val about = (index + 2 until keys.size).firstOrNull { keys[it] == "عن" } ?: return null
+        return tokens.subList(index + 2, about).joinToString(" ").takeIf { it.isNotBlank() }
+    }
+
+    private fun removeSongPrefix(query: String): String = query.replace(Regex("^(?:أغنية|اغنية|اغنيه|أغنيه)\\s+"), "")
+
+    private fun extractExpression(n: String): String? {
+        val numbers = n.replace("زائد", "+").replace("ناقص", "-").replace("ضرب", "*").replace("تقسيم", "/")
+        val candidate = Regex("[-+]?\\d[\\d.\\s+*/-]*").find(numbers)?.value?.replace(" ", "")?.trimEnd('=') ?: return null
+        return candidate.takeIf { Regex("[-+]?\\d+(?:\\.\\d+)?(?:[+*/-]\\d+(?:\\.\\d+)?)+").matches(it) }
+    }
 }
