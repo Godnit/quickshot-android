@@ -6,7 +6,7 @@ interface LocalBrain {
 
 sealed class LocalAction {
     data class OpenApp(val query: String) : LocalAction()
-    data class OpenAppAndSearch(val appQuery: String, val searchQuery: String) : LocalAction()
+    data class OpenAppAndSearch(val appQuery: String, val searchQuery: String, val playFirst: Boolean = false) : LocalAction()
     data class OpenAppAndCalculate(val appQuery: String, val expression: String) : LocalAction()
     data class SearchYoutube(val query: String, val playFirst: Boolean) : LocalAction()
     data class SearchChrome(val query: String, val images: Boolean) : LocalAction()
@@ -61,7 +61,10 @@ class RuleBasedArabicBrain : LocalBrain {
         }
         if (isSearch && mxPlayer) {
             val query = extractQuery(normalized, commonSearchWords + setOf("مشغل", "ام", "اكس", "mx", "player", "mxplayer", "شغل", "شغله", "شغلها", "و"))
-            if (query.isNotBlank()) return LocalAction.OpenAppAndSearch("ام اكس", query)
+            if (query.isNotBlank()) {
+                val playFirst = containsAny(normalized, "شغل", "شغله", "شغلها", "تشغيل")
+                return LocalAction.OpenAppAndSearch("ام اكس", query, playFirst)
+            }
         }
         if (isSearch && containsAny(normalized, "جوجل", "google", "الويب", "الانترنت")) {
             val query = extractQuery(normalized, commonSearchWords + setOf("جوجل", "google", "الويب", "الانترنت", "و"))
