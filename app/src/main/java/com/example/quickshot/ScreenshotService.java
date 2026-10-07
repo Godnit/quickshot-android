@@ -148,14 +148,26 @@ public class ScreenshotService extends Service {
     private void flashEdges() {
         if(!Settings.canDrawOverlays(this)) return;
         WindowManager wm=(WindowManager)getSystemService(WINDOW_SERVICE);
+        final float density=getResources().getDisplayMetrics().density;
         View effect=new View(this){
             private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
-            @Override protected void onDraw(Canvas canvas){ paint.setStyle(Paint.Style.STROKE); paint.setColor(Color.WHITE); paint.setStrokeWidth(12*getResources().getDisplayMetrics().density); canvas.drawRect(0,0,getWidth(),getHeight(),paint); }
+            @Override protected void onDraw(Canvas canvas){
+                float edge=30*density;
+                paint.setStyle(Paint.Style.FILL);
+                paint.setShader(new LinearGradient(0,0,0,edge, new int[]{0x00FFFFFF,0x42FFFFFF,0x00FFFFFF},null,Shader.TileMode.CLAMP)); canvas.drawRect(0,0,getWidth(),edge,paint);
+                paint.setShader(new LinearGradient(0,getHeight(),0,getHeight()-edge, new int[]{0x00FFFFFF,0x42FFFFFF,0x00FFFFFF},null,Shader.TileMode.CLAMP)); canvas.drawRect(0,getHeight()-edge,getWidth(),getHeight(),paint);
+                paint.setShader(new LinearGradient(0,0,edge,0, new int[]{0x00FFFFFF,0x36FFFFFF,0x00FFFFFF},null,Shader.TileMode.CLAMP)); canvas.drawRect(0,0,edge,getHeight(),paint);
+                paint.setShader(new LinearGradient(getWidth(),0,getWidth()-edge,0, new int[]{0x00FFFFFF,0x36FFFFFF,0x00FFFFFF},null,Shader.TileMode.CLAMP)); canvas.drawRect(getWidth()-edge,0,getWidth(),getHeight(),paint);
+                paint.setShader(null);
+            }
         };
         WindowManager.LayoutParams params=new WindowManager.LayoutParams(-1,-1,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT);
-        try { wm.addView(effect,params); effect.setAlpha(.45f); effect.animate().alpha(0).setDuration(240).withEndAction(() -> { try { wm.removeView(effect); } catch(Exception ignored){} }).start(); }
-        catch(Exception error){ Log.w("QuickShot","Optional flash unavailable",error); }
+        try {
+            wm.addView(effect,params); effect.setAlpha(.72f);
+            effect.animate().alpha(0f).setDuration(560).setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .withEndAction(() -> { try { wm.removeView(effect); } catch(Exception ignored){} }).start();
+        } catch(Exception error){ Log.w("QuickShot","Optional flash unavailable",error); }
     }
     @Override public void onDestroy() {
         ready=false;
