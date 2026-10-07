@@ -35,7 +35,7 @@ public class CropActivity extends Activity {
     }
     private int dp(int n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
     private void finishWith(Bitmap bitmap){
-        try { save(bitmap); Toast.makeText(this,"تم حفظ اللقطة في Screenshots",Toast.LENGTH_SHORT).show(); }
+        try { save(bitmap); ScreenshotService.showFlash(this); Toast.makeText(this,"تم حفظ اللقطة في Screenshots",Toast.LENGTH_SHORT).show(); }
         catch(Exception e){ Toast.makeText(this,"تعذر حفظ الصورة",Toast.LENGTH_LONG).show(); }
         finally { if(bitmap!=original) bitmap.recycle(); if(original!=null) original.recycle(); pending.delete(); finish(); }
     }
