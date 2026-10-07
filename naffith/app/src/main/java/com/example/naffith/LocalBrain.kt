@@ -54,7 +54,7 @@ class RuleBasedArabicBrain : LocalBrain {
         if (n in setOf("اقرا الشاشه", "ما في الشاشه", "ايش في الشاشه", "ماذا علي الشاشه")) return LocalAction.ReadScreen
         if (listOf("التطبيقات المثبته", "التطبيقات الموجوده", "التطبيقات عندي", "ايش التطبيقات", "قائمه التطبيقات", "ما هي التطبيقات").any { n.contains(it) }) return LocalAction.ListApps
 
-        val folder = Regex("(?:ادخل|دخل|اذهب الى|اذهب ل|افتح)\\s+(?:مجلد|المجلد)\\s+(.+)$").find(n)
+        val folder = Regex("و?(?:ادخل|دخل|اذهب الى|اذهب ل|افتح)\\s+(?:مجلد|المجلد)\\s+(.+)$").find(n)
             ?.groupValues?.getOrNull(1)?.trim(' ', '،', ',', '.', '؟', '?')
         if (folder != null && folder.isNotBlank()) return LocalAction.OpenFolder(folder)
 
