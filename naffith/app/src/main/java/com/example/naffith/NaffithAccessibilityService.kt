@@ -197,6 +197,9 @@ class NaffithAccessibilityService : AccessibilityService() {
             if (input != null) {
                 val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, current.text) }
                 if (input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) { keyIndex = current.text.length; waitFor(1, 400L) }
+            } else {
+                // الآلات الحاسبة ذات لوحة الأزرار لا تملك EditText؛ انتقل مباشرة إلى الأزرار.
+                waitFor(1, 400L)
             }
             return
         }
