@@ -56,7 +56,13 @@ class NaffithAccessibilityService : AccessibilityService() {
                     input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
                     // زر البحث الظاهر هو بديل Enter المتوافق مع Android 8.1.
                     clickNode(findFirst(root) { isSearchNode(it) })
-                    clearRequest()
+                    if (searchPlayFirst) {
+                        searchPlayFirst = false
+                        mode = MODE_PLAY_FIRST
+                        requestStartedAt = System.currentTimeMillis()
+                    } else {
+                        clearRequest()
+                    }
                     lastActionAt = System.currentTimeMillis()
                 }
             }
@@ -160,6 +166,7 @@ class NaffithAccessibilityService : AccessibilityService() {
         targetQuery = ""
         mode = MODE_NONE
         searchStage = 0
+        searchPlayFirst = false
         calculatorKeys = ""
         calculatorIndex = 0
         calculatorMisses = 0
@@ -177,6 +184,7 @@ class NaffithAccessibilityService : AccessibilityService() {
         @Volatile private var targetQuery = ""
         @Volatile private var mode = MODE_NONE
         @Volatile private var searchStage = 0
+        @Volatile private var searchPlayFirst = false
         @Volatile private var calculatorKeys = ""
         @Volatile private var calculatorIndex = 0
         @Volatile private var calculatorMisses = 0
@@ -185,9 +193,10 @@ class NaffithAccessibilityService : AccessibilityService() {
 
         private val excludedFromFirstResult = listOf("بحث", "search", "الصفحة الرئيسية", "home", "اشتراك", "subscriptions", "shorts")
 
-        fun requestSearch(packageName: String, query: String) {
+        fun requestSearch(packageName: String, query: String, playFirst: Boolean = false) {
             targetPackage = packageName
             targetQuery = query
+            searchPlayFirst = playFirst
             mode = MODE_SEARCH
             searchStage = 0
             lastActionAt = 0L
