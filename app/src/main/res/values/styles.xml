@@ -6,4 +6,8 @@
 <item name="android:backgroundDimEnabled">false</item>
 <item name="android:windowAnimationStyle">@null</item>
 <item name="android:windowDisablePreview">true</item>
+</style><style name="CropTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+<item name="android:fontFamily">sans</item><item name="android:windowFullscreen">true</item>
+<item name="android:colorAccent">#00A6B2</item><item name="android:navigationBarColor">#000000</item>
+<item name="android:windowLightNavigationBar">false</item><item name="android:windowActionModeOverlay">true</item>
 </style></resources>
