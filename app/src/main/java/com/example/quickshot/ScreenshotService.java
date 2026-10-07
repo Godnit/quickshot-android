@@ -2,7 +2,7 @@ package com.example.quickshot;
 import android.util.DisplayMetrics;import android.app.*;import android.content.*;import android.content.pm.ServiceInfo;import android.graphics.*;import android.hardware.display.*;import android.media.*;import android.media.projection.*;import android.net.Uri;import android.os.*;import android.provider.MediaStore;import android.view.*;import android.widget.*;import java.io.*;import java.text.*;import java.util.*;
 public class ScreenshotService extends Service{
  private WindowManager wm;private ImageButton bubble;private View flash;private MediaProjection projection;private ImageReader reader;private VirtualDisplay display;private int w,h,density;private boolean busy;
- @Override public void onCreate(){super.onCreate();createChannel();if(Build.VERSION.SDK_INT>=29)startForeground(10,notification(),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);else startForeground(10,notification());wm=(WindowManager)getSystemService(WINDOW_SERVICE);showBubble();}
+ @Override public void onCreate(){super.onCreate();createChannel();if(Build.VERSION.SDK_INT>=29)startForeground(10,notification(),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);else startForeground(10,notification());wm=(WindowManager)getSystemService(WINDOW_SERVICE);}
  private void createChannel(){if(Build.VERSION.SDK_INT>=26){NotificationChannel c=new NotificationChannel("capture","لقطة سريعة",NotificationManager.IMPORTANCE_LOW);((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(c);}}
  private Notification notification(){Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,"capture"):new Notification.Builder(this);return b.setSmallIcon(android.R.drawable.ic_menu_camera).setContentTitle("لقطة سريعة تعمل").setContentText("اضغط الزر العائم لالتقاط الشاشة").setOngoing(true).build();}
  private int dp(int x){return(int)(x*getResources().getDisplayMetrics().density+.5f);}private WindowManager.LayoutParams lp(int type){WindowManager.LayoutParams p=new WindowManager.LayoutParams(dp(58),dp(58),type,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,PixelFormat.TRANSLUCENT);p.gravity=Gravity.END|Gravity.CENTER_VERTICAL;p.y=-dp(70);return p;}
@@ -15,4 +15,6 @@ public class ScreenshotService extends Service{
  @Override public int onStartCommand(Intent i,int f,int id){if(i!=null&&i.hasExtra("data")){MediaProjectionManager m=(MediaProjectionManager)getSystemService(MEDIA_PROJECTION_SERVICE);projection=m.getMediaProjection(i.getIntExtra("resultCode",0),(Intent)i.getParcelableExtra("data"));projection.registerCallback(new MediaProjection.Callback(){@Override public void onStop(){stopSelf();}},new Handler(Looper.getMainLooper()));}return START_NOT_STICKY;}
  @Override public void onDestroy(){if(bubble!=null)wm.removeView(bubble);if(display!=null)display.release();if(reader!=null)reader.close();if(projection!=null)projection.stop();super.onDestroy();}@Override public IBinder onBind(Intent i){return null;}
 }
+
+
 
