@@ -105,9 +105,10 @@ class NaffithAccessibilityService : AccessibilityService() {
                 Kind.PLAY -> playStep(current, nodes)
                 Kind.DOWNLOAD_IMAGE -> imageStep(current, nodes)
                 Kind.CLICK -> {
-                    val label = ArabicText.normalize(current.text)
+                    val label = current.text
                     val node = nodes.firstOrNull { it.isVisibleToUser && !it.isEditable &&
-                        (ArabicText.normalize(nodeText(it)) == label || (label in setOf("انتر", "enter", "بحث", "تم") && AutomationRules.submitButton(nodeText(it), id(it)))) && clickable(it) }
+                        (AutomationRules.clickCandidate(nodeText(it), id(it), label) ||
+                            (ArabicText.normalize(label) in setOf("انتر", "enter", "بحث", "تم") && AutomationRules.submitButton(nodeText(it), id(it)))) && clickable(it) }
                     if (node != null && click(node)) finish("ضغطت «${current.text}».")
                 }
             }
@@ -250,7 +251,8 @@ class NaffithAccessibilityService : AccessibilityService() {
                 if (accepted) waitFor(2, 900L)
             }
             2 -> {
-                val download = nodes.firstOrNull { it.isVisibleToUser && AutomationRules.downloadButton(nodeText(it)) && clickable(it) }
+                val download = nodes.firstOrNull { it.isVisibleToUser &&
+                    (AutomationRules.downloadButton(nodeText(it)) || id(it).contains("download") || id(it).contains("save")) && clickable(it) }
                 if (download != null && click(download)) finish("اخترت صورة من «${current.text}» وضغطت تنزيل الصورة في المتصفح. تحقق من مجلد التنزيلات.")
                 else if (++attempts > 15) finish("فتحت نتائج الصور، لكن المتصفح لم يعرض خيار تنزيل الصورة. احفظ الصورة يدويًا.")
             }

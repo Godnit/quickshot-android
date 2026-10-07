@@ -12,12 +12,18 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
+import android.os.Handler
+import android.os.Looper
+import java.util.ArrayDeque
 
 class MainActivity : Activity() {
     private val brain: LocalBrain = RuleBasedArabicBrain()
     private lateinit var catalog: AppCatalog
     private lateinit var commandInput: EditText
     private lateinit var logView: TextView
+    private val planHandler = Handler(Looper.getMainLooper())
+    private val pendingCommands = ArrayDeque<String>()
+    private var planRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,6 +53,20 @@ class MainActivity : Activity() {
             Toast.makeText(this, "اكتب أمرًا أولًا", Toast.LENGTH_SHORT).show()
             return
         }
+        val parts = splitCommands(text)
+        if (parts.size > 1) {
+            pendingCommands.clear()
+            pendingCommands.addAll(parts)
+            planRunning = true
+            appendLog("أنت: خطة من ${parts.size} أوامر. سأنفذها بالتتابع.")
+            runNextPlannedCommand()
+            commandInput.text.clear()
+            return
+        }
+        executeSingleCommand(text)
+    }
+
+    private fun executeSingleCommand(text: String) {
         appendLog("أنت: $text")
         when (val action = brain.understand(text)) {
             is LocalAction.OpenApp -> openInstalledApp(action.query)
@@ -57,6 +77,7 @@ class MainActivity : Activity() {
             is LocalAction.SearchWeb -> searchWeb(action.query)
             is LocalAction.Write -> writeText(action)
             is LocalAction.Click -> clickLabel(action.label)
+            is LocalAction.OpenFolder -> openFolder(action.folder)
             LocalAction.OpenFiles -> openFiles()
             LocalAction.OpenSettings -> openSettings()
             LocalAction.ListApps -> listInstalledApps()
@@ -68,6 +89,46 @@ class MainActivity : Activity() {
             is LocalAction.Unknown -> appendLog("نفّذ: لم أفهم الأمر. اكتب «مساعدة» لرؤية أمثلة الأوامر.")
         }
         commandInput.text.clear()
+    }
+
+    private fun runNextPlannedCommand() {
+        if (pendingCommands.isEmpty()) {
+            planRunning = false
+            appendLog("نفّذ: اكتملت الخطة.")
+            return
+        }
+        val command = pendingCommands.removeFirst()
+        executeSingleCommand(command)
+        if (pendingCommands.isNotEmpty()) {
+            // نمنح التطبيق وإمكانية الوصول وقتًا لفتح الشاشة قبل الأمر التالي.
+            planHandler.postDelayed({ runNextPlannedCommand() }, 6500L)
+        } else {
+            planHandler.postDelayed({ runNextPlannedCommand() }, 1200L)
+        }
+    }
+
+    private fun splitCommands(text: String): List<String> {
+        val tokens = text.replace('؛', '|').split(Regex("\\s+|\\|" )).filter { it.isNotBlank() }
+        if (tokens.isEmpty()) return emptyList()
+        val starts = setOf("افتح", "شغل", "ابحث", "اكتب", "اضغط", "احسب", "ادخل", "دخل", "اذهب", "اقرا", "اقرأ", "ارجع", "توقف")
+        val parts = mutableListOf<String>()
+        val current = mutableListOf<String>()
+        for (token in tokens) {
+            val normalized = ArabicText.normalize(token.trim('،', ',', '.', '؟', '?', '!'))
+            val bare = normalized.removePrefix("و")
+            val previous = current.lastOrNull()?.let { ArabicText.normalize(it) }
+            val startsNew = current.isNotEmpty() && (
+                normalized in starts ||
+                    bare in setOf("افتح", "ادخل", "دخل", "اذهب") && normalized.startsWith("و")
+                )
+            if (startsNew) {
+                parts += current.joinToString(" ")
+                current.clear()
+            }
+            current += token
+        }
+        if (current.isNotEmpty()) parts += current.joinToString(" ")
+        return parts.map { it.trim() }.filter { it.isNotBlank() }
     }
 
     private fun openInstalledApp(query: String) {
@@ -147,6 +208,21 @@ class MainActivity : Activity() {
         val packageName = NaffithAccessibilityService.latestScreenPackage
         val queued = if (packageName.isBlank()) false else NaffithAccessibilityService.requestClick(packageName, label)
         appendLog(if (queued) "نفّذ: سأضغط «$label»." else "نفّذ: لا توجد شاشة مستهدفة. افتح التطبيق أولًا.")
+    }
+
+    private fun openFolder(folder: String) {
+        val fileApp = catalog.find("الملفات")
+        if (fileApp == null) {
+            appendLog("نفّذ: لم أجد تطبيق إدارة الملفات لفتح مجلد «$folder».")
+            return
+        }
+        val queued = NaffithAccessibilityService.requestClick(fileApp.packageName, folder)
+        try { startActivity(fileApp.intent) } catch (_: ActivityNotFoundException) {
+            appendLog("نفّذ: لا أستطيع تشغيل ${fileApp.label}.")
+            return
+        }
+        appendLog(if (queued) "نفّذ: فتحت ${fileApp.label} وسأدخل مجلد «$folder»."
+        else "نفّذ: فتحت ${fileApp.label}. فعّل إمكانية الوصول لدخول المجلد تلقائيًا.")
     }
 
     private fun openFiles() {

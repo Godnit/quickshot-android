@@ -45,5 +45,22 @@ object AutomationRules {
     }
 
     fun downloadButton(text: String): Boolean = ArabicText.normalize(text).trimEnd('.', '…') in
-        setOf("download image", "save image", "تنزيل الصوره", "تحميل الصوره", "حفظ الصوره")
+        setOf("download image", "save image", "download picture", "save picture", "تنزيل الصوره", "تحميل الصوره", "حفظ الصوره", "تنزيل", "تحميل", "حفظ")
+
+    fun clickCandidate(text: String, id: String, target: String): Boolean {
+        val value = ArabicText.normalize(text)
+        val wanted = ArabicText.normalize(target)
+        if (value == wanted || value.contains(wanted)) return true
+        val name = id.lowercase()
+        return when {
+            wanted in setOf("اعجاب", "لايك", "اعجبني", "like") ->
+                value.contains("اعجب") || value.contains("like") || name.contains("like")
+            wanted in setOf("اشتراك", "اشترك", "subscribe") ->
+                value.contains("اشتراك") || value.contains("subscribe") || name.contains("subscribe")
+            wanted in setOf("تشغيل", "شغل", "play") ->
+                value == "play" || value.contains("تشغيل") || name.contains("play")
+            wanted in setOf("تنزيل", "تحميل", "download") -> downloadButton(value) || name.contains("download")
+            else -> false
+        }
+    }
 }

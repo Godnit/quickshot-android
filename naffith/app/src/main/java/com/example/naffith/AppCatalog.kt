@@ -34,7 +34,7 @@ class AppCatalog(private val context: Context) {
         addHandlers(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA))
         addHandlers(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CALCULATOR))
         addHandlers(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_GALLERY))
-        addHandlers(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"))
+        addHandlers(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_FILES))
         return apps.values.sortedBy { ArabicText.normalize(it.label) }
     }
 

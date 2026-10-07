@@ -11,6 +11,7 @@ sealed class LocalAction {
     data class SearchWeb(val query: String) : LocalAction()
     data class Write(val appQuery: String?, val text: String, val submit: Boolean) : LocalAction()
     data class Click(val label: String) : LocalAction()
+    data class OpenFolder(val folder: String) : LocalAction()
     object OpenFiles : LocalAction()
     object OpenSettings : LocalAction()
     object ListApps : LocalAction()
@@ -29,7 +30,13 @@ class RuleBasedArabicBrain : LocalBrain {
         "ام اكس", "ام اكس بلاير", "ام اكس بليير", "مشغل ام اكس", "ام اكس", "mx player", "mxplayer",
         "الحاسبه", "الاله الحاسبه", "اله حاسبه", "الحاسبه", "calculator", "calc",
         "اداره الملفات", "مدير الملفات", "الملفات", "ملفاتي", "files", "file manager",
-        "الكاميرا", "كاميرا", "camera", "المعرض", "الصور", "gallery", "photos"
+        "الكاميرا", "كاميرا", "camera", "المعرض", "الصور", "gallery", "photos",
+        "جوجل", "قوقل", "google", "متجر بلاي", "متجر play", "جوجل بلاي", "google play", "play store",
+        "موسيقى بلاي", "موسيقى play", "play music", "youtube music", "يوتيوب ميوزك",
+        "تليجرام", "تلجرام", "تيليجرام", "telegram", "ماسنجر", "messenger", "فيسبوك", "facebook",
+        "انستقرام", "انستغرام", "instagram", "تيك توك", "تيكتوك", "tiktok", "الرسائل", "messages",
+        "جهات الاتصال", "الأسماء", "اسماء", "contacts", "الهاتف", "phone", "البريد الالكتروني", "جيميل", "gmail",
+        "الساعة", "clock", "مسجل الصوت", "مسجل صوتي", "voice recorder", "الراديو", "راديو fm", "fm radio"
     )
     private val searchVerbs = setOf("ابحث", "بحث", "دور", "فتش", "ابحت", "ابحتث")
     private val writeVerbs = setOf("اكتب", "يكتب", "كتابه", "اكتبي")
@@ -46,6 +53,10 @@ class RuleBasedArabicBrain : LocalBrain {
         if (n in setOf("الشاشه الرئيسيه", "ارجع للرئيسيه", "افتح الرئيسيه")) return LocalAction.Home
         if (n in setOf("اقرا الشاشه", "ما في الشاشه", "ايش في الشاشه", "ماذا علي الشاشه")) return LocalAction.ReadScreen
         if (listOf("التطبيقات المثبته", "التطبيقات الموجوده", "التطبيقات عندي", "ايش التطبيقات", "قائمه التطبيقات", "ما هي التطبيقات").any { n.contains(it) }) return LocalAction.ListApps
+
+        val folder = Regex("(?:ادخل|دخل|اذهب الى|اذهب ل|افتح)\\s+(?:مجلد|المجلد)\\s+(.+)$").find(n)
+            ?.groupValues?.getOrNull(1)?.trim(' ', '،', ',', '.', '؟', '?')
+        if (folder != null && folder.isNotBlank()) return LocalAction.OpenFolder(folder)
 
         val calculator = listOf("الحاسبه", "حاسبه", "calculator", "calc").any { n.contains(it) }
         if (calculator || keys.any { it == "احسب" || it == "واحسب" }) {
@@ -89,6 +100,9 @@ class RuleBasedArabicBrain : LocalBrain {
             val label = tokens.drop(1).joinToString(" ").trim()
             if (label.isNotEmpty()) return LocalAction.Click(label)
         }
+        if (listOf("لايك", "اعجاب", "إعجاب", "اعجبني", "ضع اعجاب", "ضع إعجاب", "اعمل لايك", "سو لايك").any { n.contains(ArabicText.normalize(it)) }) {
+            return LocalAction.Click("إعجاب")
+        }
         if (app == "الملفات") return LocalAction.OpenFiles
         if (listOf("الاعدادات", "الضبط", "settings").any { n.contains(it) }) return LocalAction.OpenSettings
         if (app != null) return LocalAction.OpenApp(app)
@@ -109,6 +123,21 @@ class RuleBasedArabicBrain : LocalBrain {
             found.contains("حاسبه") || found in setOf("calculator", "calc") -> "الحاسبة"
             found.contains("ملف") || found in setOf("files", "file manager") -> "الملفات"
             found.contains("كاميرا") || found == "camera" -> "الكاميرا"
+            found in setOf("جوجل", "قوقل", "google") -> "جوجل"
+            found.contains("متجر") || found.contains("play store") || found.contains("بلاي") && found.contains("google") -> "متجر بلاي"
+            found.contains("موسيقى") || found.contains("music") -> "موسيقى بلاي"
+            found.contains("تليجرام") || found.contains("تلجرام") || found.contains("telegram") -> "تليجرام"
+            found.contains("ماسنجر") || found == "messenger" -> "ماسنجر"
+            found.contains("فيسبوك") || found == "facebook" -> "فيسبوك"
+            found.contains("انست") || found == "instagram" -> "انستقرام"
+            found.contains("تيك") || found == "tiktok" -> "تيك توك"
+            found.contains("رسائل") || found == "messages" -> "الرسائل"
+            found.contains("اتصال") || found.contains("اسماء") || found == "contacts" -> "جهات الاتصال"
+            found.contains("هاتف") || found == "phone" -> "الهاتف"
+            found.contains("بريد") || found.contains("جيميل") || found == "gmail" -> "البريد الإلكتروني"
+            found.contains("ساعه") || found == "clock" -> "الساعة"
+            found.contains("مسجل") || found.contains("recorder") -> "مسجل الصوت"
+            found.contains("راديو") || found.contains("radio") -> "الراديو"
             else -> "الصور"
         }
     }
