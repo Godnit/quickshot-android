@@ -153,10 +153,10 @@ public class ScreenshotService extends Service {
         }
     }
     private void message(String text) { main.post(() -> Toast.makeText(this,text,Toast.LENGTH_LONG).show()); }
-    private void flashEdges() {
-        if(!Settings.canDrawOverlays(this)) return;
-        WindowManager wm=(WindowManager)getSystemService(WINDOW_SERVICE);
-        final float density=getResources().getDisplayMetrics().density;
+    public static void showFlash(Context context) {
+        if(!Settings.canDrawOverlays(context)) return;
+        WindowManager wm=(WindowManager)context.getSystemService(Context.WINDOW_SERVICE);
+        final float density=context.getResources().getDisplayMetrics().density;
         View effect=new View(this){
             private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
             @Override protected void onDraw(Canvas canvas){
