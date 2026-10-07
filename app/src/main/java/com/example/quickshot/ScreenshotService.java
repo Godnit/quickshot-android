@@ -105,11 +105,19 @@ public class ScreenshotService extends Service {
             if(image==null || !pending) return;
             pending=false; worker.removeCallbacks(timeout);
             Bitmap bitmap=copyImage(image); image.close(); image=null;
-            try { save(bitmap); message("تم حفظ لقطة الشاشة في Screenshots"); main.post(this::flashEdges); }
-            finally { bitmap.recycle(); }
+            try { openCropChooser(bitmap); }
+            catch(Exception error) { Log.e("QuickShot","Review failed",error); bitmap.recycle(); message("تعذر فتح شاشة تحديد الجزء"); }
             busy=false;
         } catch(Exception error) { Log.e("QuickShot","Save failed",error); pending=false; busy=false; worker.removeCallbacks(timeout); message("تعذر حفظ الصورة. تحقق من إذن التخزين والمساحة المتاحة"); }
         finally { if(image!=null) image.close(); }
+    }
+    private void openCropChooser(Bitmap bitmap) throws IOException {
+        File pendingFile=new File(getCacheDir(),"quickshot_pending.png");
+        try(OutputStream out=new FileOutputStream(pendingFile)) {
+            if(!bitmap.compress(Bitmap.CompressFormat.PNG,100,out)) throw new IOException("Pending PNG write failed");
+        } finally { bitmap.recycle(); }
+        Intent review=new Intent(this,CropActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_NO_ANIMATION);
+        main.post(() -> startActivity(review));
     }
     private void pollFrame() { if(pending) { onFrame(reader); if(pending) worker.postDelayed(this::pollFrame,120); } }
     private Bitmap copyImage(Image image) {
