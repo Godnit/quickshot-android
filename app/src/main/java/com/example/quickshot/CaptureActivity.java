@@ -4,7 +4,6 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.media.projection.MediaProjectionConfig;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -29,9 +28,7 @@ public class CaptureActivity extends Activity {
             close();
         } else {
             MediaProjectionManager manager = (MediaProjectionManager)getSystemService(MEDIA_PROJECTION_SERVICE);
-            Intent consent = Build.VERSION.SDK_INT >= 34
-                ? manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
-                : manager.createScreenCaptureIntent();
+            Intent consent = manager.createScreenCaptureIntent();
             startActivityForResult(consent, CAPTURE);
         }
     }
