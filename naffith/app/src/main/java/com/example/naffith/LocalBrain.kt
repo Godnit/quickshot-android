@@ -34,7 +34,9 @@ class RuleBasedArabicBrain : LocalBrain {
             return LocalAction.Help
         }
         if (normalized.contains("التطبيقات المثبته") || normalized.contains("التطبيقات الموجوده") ||
-            normalized.contains("قائمه التطبيقات") || normalized.contains("ما هي التطبيقات")) {
+            normalized.contains("التطبيقات عندي") || normalized.contains("ايش التطبيقات") ||
+            normalized.contains("قائمه التطبيقات") || normalized.contains("ما هي التطبيقات") ||
+            normalized.contains("ما التطبيقات")) {
             return LocalAction.ListApps
         }
 
