@@ -38,13 +38,13 @@ class MainActivity : Activity() {
             Toast.makeText(this, "اكتب أمرًا أولًا", Toast.LENGTH_SHORT).show()
             return
         }
-
         appendLog("أنت: $text")
         when (val action = brain.understand(text)) {
             is LocalAction.OpenApp -> openInstalledApp(action.query)
             is LocalAction.OpenAppAndSearch -> openInstalledAppAndSearch(action.appQuery, action.searchQuery)
-            is LocalAction.SearchYoutube -> searchYoutube(action.query)
-            is LocalAction.SearchChrome -> searchChrome(action.query)
+            is LocalAction.OpenAppAndCalculate -> openInstalledAppAndCalculate(action.appQuery, action.expression)
+            is LocalAction.SearchYoutube -> searchYoutube(action.query, action.playFirst)
+            is LocalAction.SearchChrome -> searchChrome(action.query, action.images)
             is LocalAction.SearchWeb -> searchWeb(action.query)
             LocalAction.OpenFiles -> openFiles()
             LocalAction.OpenSettings -> openSettings()
@@ -58,7 +58,7 @@ class MainActivity : Activity() {
     private fun openInstalledApp(query: String) {
         val app = catalog.find(query)
         if (app == null) {
-            appendLog("نفّذ: لم أجد تطبيقًا مثبتًا باسم «$query». جرّب «ما هي التطبيقات المثبتة». ")
+            appendLog("نفّذ: لم أجد تطبيقًا مثبتًا باسم «$query». جرّب «ما هي التطبيقات المثبتة».")
             return
         }
         val intent = packageManager.getLaunchIntentForPackage(app.packageName)
@@ -73,7 +73,7 @@ class MainActivity : Activity() {
     private fun openInstalledAppAndSearch(appQuery: String, searchQuery: String) {
         val app = catalog.find(appQuery)
         if (app == null) {
-            appendLog("نفّذ: لم أجد تطبيق «$appQuery». ثبّت التطبيق أو اكتب قائمة التطبيقات.")
+            appendLog("نفّذ: لم أجد تطبيق «$appQuery». اكتب «ما هي التطبيقات المثبتة» للتأكد من الاسم.")
             return
         }
         val intent = packageManager.getLaunchIntentForPackage(app.packageName)
@@ -83,50 +83,86 @@ class MainActivity : Activity() {
         }
         NaffithAccessibilityService.requestSearch(app.packageName, searchQuery)
         startActivity(intent)
-        appendLog("نفّذ: فتحت ${app.label} وسأحاول البحث عن «$searchQuery» عبر إمكانية الوصول.")
+        appendLog("نفّذ: فتحت ${app.label} وسأبحث عن «$searchQuery» وأضغط Enter عبر إمكانية الوصول.")
     }
 
-    private fun searchYoutube(query: String) {
+    private fun openInstalledAppAndCalculate(appQuery: String, expression: String) {
+        val app = catalog.find(appQuery)
+        if (app == null) {
+            appendLog("نفّذ: لم أجد تطبيق الحاسبة. جرّب فتحه يدويًا مرة أو اكتب «ما هي التطبيقات المثبتة».")
+            return
+        }
+        val intent = packageManager.getLaunchIntentForPackage(app.packageName)
+        if (intent == null) {
+            appendLog("نفّذ: وجدت ${app.label} لكن لا يوجد له اختصار تشغيل.")
+            return
+        }
+        NaffithAccessibilityService.requestCalculator(app.packageName, expression)
+        startActivity(intent)
+        appendLog("نفّذ: فتحت ${app.label} وسأدخل $expression ثم أضغط يساوي عبر إمكانية الوصول.")
+    }
+
+    private fun searchYoutube(query: String, playFirst: Boolean) {
         val url = if (query.isBlank()) "https://www.youtube.com" else
             "https://www.youtube.com/results?search_query=${Uri.encode(query)}"
+        val youtube = catalog.find("يوتيوب")
+        if (playFirst && youtube != null) NaffithAccessibilityService.requestPlayFirst(youtube.packageName)
         val youtubeIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-            setPackage("com.google.android.youtube")
+            if (youtube != null) setPackage(youtube.packageName)
         }
         try {
             startActivity(youtubeIntent)
         } catch (_: ActivityNotFoundException) {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         }
-        appendLog(if (query.isBlank()) "نفّذ: تم فتح يوتيوب" else "نفّذ: بحثت في يوتيوب عن «$query»")
+        appendLog(
+            if (query.isBlank()) "نفّذ: تم فتح يوتيوب"
+            else if (playFirst) "نفّذ: بحثت في يوتيوب عن «$query» وسأحاول تشغيل أول نتيجة."
+            else "نفّذ: بحثت في يوتيوب عن «$query»."
+        )
     }
 
-    private fun searchChrome(query: String) {
-        val url = "https://www.google.com/search?q=${Uri.encode(query)}"
+    private fun searchChrome(query: String, images: Boolean) {
+        val url = if (images) {
+            "https://www.google.com/search?tbm=isch&q=${Uri.encode(query)}"
+        } else {
+            "https://www.google.com/search?q=${Uri.encode(query)}"
+        }
+        val chrome = catalog.find("كروم")
         val chromeIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-            setPackage("com.android.chrome")
+            if (chrome != null) setPackage(chrome.packageName)
         }
         try {
             startActivity(chromeIntent)
         } catch (_: ActivityNotFoundException) {
-            searchWeb(query)
+            searchWeb(query, images)
+            return
         }
-        appendLog("نفّذ: بحثت في Chrome عن «$query»")
+        appendLog(if (images) "نفّذ: فتحت صور Google عن «$query». اختر الصورة واحفظها من Chrome." else "نفّذ: بحثت في Chrome عن «$query».")
     }
 
-    private fun searchWeb(query: String) {
-        val url = "https://www.google.com/search?q=${Uri.encode(query)}"
+    private fun searchWeb(query: String, images: Boolean = false) {
+        val url = if (images) "https://www.google.com/search?tbm=isch&q=${Uri.encode(query)}"
+        else "https://www.google.com/search?q=${Uri.encode(query)}"
         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        appendLog("نفّذ: بحثت على الويب عن «$query»")
+        appendLog(if (images) "نفّذ: فتحت نتائج الصور عن «$query»." else "نفّذ: بحثت على الويب عن «$query».")
     }
 
     private fun openFiles() {
+        val fileApp = catalog.find("اداره الملفات")
+        val launchIntent = fileApp?.let { packageManager.getLaunchIntentForPackage(it.packageName) }
+        if (launchIntent != null) {
+            startActivity(launchIntent)
+            appendLog("نفّذ: تم فتح ${fileApp.label}")
+            return
+        }
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
         }
         try {
             startActivityForResult(intent, REQUEST_OPEN_FILE)
-            appendLog("نفّذ: افتح منتقي الملفات")
+            appendLog("نفّذ: فتحت منتقي الملفات")
         } catch (_: ActivityNotFoundException) {
             appendLog("نفّذ: لم أجد مدير ملفات متاحًا")
         }
@@ -140,22 +176,23 @@ class MainActivity : Activity() {
     private fun listInstalledApps() {
         val apps = catalog.all()
         if (apps.isEmpty()) {
-            appendLog("نفّذ: لم أستطع قراءة قائمة التطبيقات.")
+            appendLog("نفّذ: لم أستطع قراءة قائمة التطبيقات. تأكد من تفعيل إمكانية رؤية التطبيقات.")
             return
         }
-        val labels = apps.take(40).joinToString("\n") { "• ${it.label}" }
-        appendLog("التطبيقات المثبتة التي لها اختصار تشغيل:\n$labels")
+        val visible = apps.take(100).joinToString("\n") { "• ${it.label}" }
+        val suffix = if (apps.size > 100) "\n… و${apps.size - 100} تطبيقات أخرى" else ""
+        appendLog("التطبيقات القابلة للتشغيل (${apps.size}):\n$visible$suffix")
     }
 
     private fun showHelp() {
         appendLog(
             "الأوامر المتاحة حاليًا:\n" +
-                "• افتح تطبيق لقطة شاشة\n" +
+                "• افتح تطبيق لقطة شاشة / الكاميرا / إدارة الملفات\n" +
                 "• ما هي التطبيقات المثبتة\n" +
-                "• ابحث في يوتيوب عن موسيقى\n" +
-                "• ابحث في كروم عن أخبار اليوم\n" +
+                "• افتح الحاسبة واحسب 500+645\n" +
+                "• ابحث في يوتيوب عن أغنية يا ليلي وشغلها\n" +
+                "• ابحث في كروم عن صور قطط\n" +
                 "• افتح مشغل ام اكس وابحث عن موسيقى\n" +
-                "• افتح الملفات\n" +
                 "• افتح الإعدادات"
         )
     }
