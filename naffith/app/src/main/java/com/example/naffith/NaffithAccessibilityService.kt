@@ -54,9 +54,8 @@ class NaffithAccessibilityService : AccessibilityService() {
                     }
                     input.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
                     input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-                    // يضغط Enter أولًا؛ إن لم يدعمه التطبيق نضغط زر البحث الظاهر.
-                    val entered = input.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER)
-                    if (!entered) clickNode(findFirst(root) { isSearchNode(it) })
+                    // زر البحث الظاهر هو بديل Enter المتوافق مع Android 8.1.
+                    clickNode(findFirst(root) { isSearchNode(it) })
                     clearRequest()
                     lastActionAt = System.currentTimeMillis()
                 }
@@ -143,10 +142,11 @@ class NaffithAccessibilityService : AccessibilityService() {
         for (index in 0 until node.childCount) node.getChild(index)?.let { appendNodeText(it, result) }
     }
 
-    private fun nodeText(node: AccessibilityNodeInfo): String =
-        listOf(node.text?.toString(), node.contentDescription?.toString())
-            .filterNotNull().firstOrNull { it.isNotBlank() }?.lowercase()
-            ?.replace('أ', 'ا')?.replace('إ', 'ا').replace('آ', 'ا')?.trim().orEmpty()
+    private fun nodeText(node: AccessibilityNodeInfo): String {
+        val raw = node.text?.toString() ?: node.contentDescription?.toString() ?: return ""
+        return raw.lowercase()
+            .replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').trim()
+    }
 
     private fun findFirst(root: AccessibilityNodeInfo?, predicate: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
         if (root == null) return null
