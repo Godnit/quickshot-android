@@ -39,7 +39,7 @@ class AppCatalog(private val context: Context) {
 
         return apps.firstOrNull { app -> candidates.any { normalize(app.label) == normalize(it) } }
             ?: apps.firstOrNull { app -> candidates.any { normalize(app.label).contains(normalize(it)) } }
-            ?: apps.firstOrNull { normalize(app.label).contains(normalizedQuery) || normalizedQuery.contains(normalize(app.label)) }
+            ?: apps.firstOrNull { app -> normalize(app.label).contains(normalizedQuery) || normalizedQuery.contains(normalize(app.label)) }
     }
 
     private fun normalize(value: String): String = value.lowercase()
