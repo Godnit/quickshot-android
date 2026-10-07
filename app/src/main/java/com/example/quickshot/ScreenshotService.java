@@ -157,7 +157,7 @@ public class ScreenshotService extends Service {
         if(!Settings.canDrawOverlays(context)) return;
         WindowManager wm=(WindowManager)context.getSystemService(Context.WINDOW_SERVICE);
         final float density=context.getResources().getDisplayMetrics().density;
-        View effect=new View(this){
+        View effect=new View(context){
             private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
             @Override protected void onDraw(Canvas canvas){
                 float edge=30*density;
