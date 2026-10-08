@@ -40,10 +40,11 @@ class RuleBasedArabicBrain : LocalBrain {
         "ام اكس", "ام اكس بلاير", "ام اكس بليير", "مشغل ام اكس", "ام اكس", "mx player", "mxplayer",
         "الحاسبه", "الاله الحاسبه", "اله حاسبه", "الحاسبه", "calculator", "calc",
         "اداره الملفات", "مدير الملفات", "الملفات", "ملفاتي", "files", "file manager",
-        "الكاميرا", "كاميرا", "camera", "المعرض", "الصور", "gallery", "photos",
+        "الكاميرا", "كاميرا", "camera", "المعرض", "معرض الصور", "الصور", "gallery", "photos",
         "جوجل", "قوقل", "google", "متجر بلاي", "متجر play", "جوجل بلاي", "google play", "play store",
         "موسيقى بلاي", "موسيقى play", "play music", "youtube music", "يوتيوب ميوزك",
         "تليجرام", "تلجرام", "تيليجرام", "telegram", "ماسنجر", "messenger", "فيسبوك", "facebook",
+        "زابيا", "zapya", "واتساب الأعمال", "واتساب بزنس", "whatsapp business",
         "انستقرام", "انستغرام", "instagram", "تيك توك", "تيكتوك", "tiktok", "الرسائل", "messages",
         "جهات الاتصال", "الأسماء", "اسماء", "contacts", "الهاتف", "phone", "البريد الالكتروني", "جيميل", "gmail",
         "الساعة", "clock", "مسجل الصوت", "مسجل صوتي", "voice recorder", "الراديو", "راديو fm", "fm radio",
@@ -87,11 +88,6 @@ class RuleBasedArabicBrain : LocalBrain {
             if (n.any { it.isDigit() }) return LocalAction.Unknown(original)
         }
         val app = knownApp(n)
-        val navigation = navigationTarget(n)
-        if (navigation != null) {
-            return if (app != null) LocalAction.OpenAppAndNavigate(app, navigation)
-            else LocalAction.Navigate(navigation)
-        }
         val searchIndex = keys.indexOfFirst { verb(it) in searchVerbs }
         val writeIndex = keys.indexOfFirst { verb(it) in writeVerbs }
         val play = keys.any { verb(it) in setOf("شغلها", "شغله", "شغل", "تشغيل") }
@@ -137,6 +133,11 @@ class RuleBasedArabicBrain : LocalBrain {
             val submit = keys.any { verb(it) in setOf("ابحث", "بحث", "تم", "انتر", "enter") }
             return LocalAction.Write(app, query, submit)
         }
+        val navigation = navigationTarget(n)
+        if (navigation != null) {
+            return if (app != null) LocalAction.OpenAppAndNavigate(app, navigation)
+            else LocalAction.Navigate(navigation)
+        }
         if (keys.firstOrNull()?.let { verb(it) } in setOf("اضغط", "انقر")) {
             val label = tokens.drop(1).joinToString(" ").trim()
             if (label.isNotEmpty()) return LocalAction.Click(label)
@@ -169,6 +170,8 @@ class RuleBasedArabicBrain : LocalBrain {
             found.contains("متجر") || found.contains("play store") || found.contains("بلاي") && found.contains("google") -> "متجر بلاي"
             found.contains("موسيقى") || found.contains("music") -> "موسيقى بلاي"
             found.contains("تليجرام") || found.contains("تلجرام") || found.contains("telegram") -> "تليجرام"
+            found.contains("زابيا") || found == "zapya" -> "زابيا"
+            found.contains("واتساب") && (found.contains("أعمال") || found.contains("اعمال") || found.contains("بزنس") || found.contains("business")) -> "واتساب الأعمال"
             found.contains("ماسنجر") || found == "messenger" -> "ماسنجر"
             found.contains("فيسبوك") || found == "facebook" -> "فيسبوك"
             found.contains("انست") || found == "instagram" -> "انستقرام"
@@ -195,7 +198,7 @@ class RuleBasedArabicBrain : LocalBrain {
             "home" to listOf("الرئيسية", "الصفحة الرئيسية", "home"),
             "like" to listOf("لايك", "اعجاب", "اعجبني", "ضع اعجاب", "like")
         )
-        val explicit = listOf("ادخل", "دخل", "اذهب", "انتقل", "افتح قسم", "في قسم", "روح", "شغل", "اعمل لايك", "اضغط")
+        val explicit = listOf("ادخل", "دخل", "اذهب", "انتقل", "افتح قسم", "في قسم", "روح", "شغل", "اعمل لايك", "سوي لايك", "سو لايك", "اضغط")
             .any { n.contains(ArabicText.normalize(it)) }
         return checks.firstOrNull { (_, aliases) ->
             aliases.any { alias -> n == ArabicText.normalize(alias) ||
@@ -204,7 +207,7 @@ class RuleBasedArabicBrain : LocalBrain {
     }
 
     private fun verb(key: String): String {
-        val verbs = searchVerbs + writeVerbs + setOf("شغل", "شغلها", "شغله", "تشغيل", "حمل", "نزل", "تحميل", "تنزيل", "اضغط", "انقر", "افتح", "تم", "انتر", "enter")
+        val verbs = searchVerbs + writeVerbs + setOf("شغل", "شغلها", "شغله", "تشغيل", "حمل", "نزل", "تحميل", "تنزيل", "اضغط", "انقر", "افتح", "تم", "انتر", "enter", "سوي", "سو", "اعمل", "ضع")
         return if (key.startsWith("و") && key.drop(1) in verbs) key.drop(1) else key
     }
 

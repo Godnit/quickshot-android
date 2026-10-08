@@ -93,7 +93,10 @@ class NaffithAccessibilityService : AccessibilityService() {
         imageRect = null
         downloadedImageKeys.clear()
         val now = SystemClock.uptimeMillis()
-        nextAt = now + 220L
+        // طلب «ابحث وشغّل» يرسل ACTION_SEARCH من MainActivity أولًا؛ إعطاء
+        // يوتيوب مهلة لعرض صفحة النتائج يمنع خدمة التشغيل من النقر على أول
+        // فيديو في الصفحة الرئيسية قبل وصول نتيجة البحث.
+        nextAt = now + if (request.kind == Kind.PLAY) 1400L else 220L
         deadline = now + 30000L
         handler.postDelayed(tick, 100L)
     }
@@ -148,9 +151,16 @@ class NaffithAccessibilityService : AccessibilityService() {
     }
 
     private fun searchStep(current: Job, nodes: List<AccessibilityNodeInfo>) {
+        val editable = nodes.filter { it.isVisibleToUser && it.isEditable && !it.isPassword }
         val input = nodes.firstOrNull { it.isVisibleToUser && it.isEditable && !it.isPassword && it.isFocused }
             ?: nodes.firstOrNull { it.isVisibleToUser && it.isEditable && !it.isPassword && id(it).contains("search") }
-            ?: nodes.filter { it.isVisibleToUser && it.isEditable && !it.isPassword }.singleOrNull()
+            ?: if (current.kind == Kind.WRITE) {
+                editable.firstOrNull {
+                    val name = id(it)
+                    name.contains("message") || name.contains("prompt") || name.contains("compose") ||
+                        name.contains("chat") || name.contains("input") || name.contains("edittext")
+                } ?: editable.maxByOrNull { bounds(it).bottom }
+            } else editable.singleOrNull()
         when (stage) {
             0 -> {
                 if (input != null) { stage = 1; return }
@@ -272,6 +282,15 @@ class NaffithAccessibilityService : AccessibilityService() {
             finish("فتحت قسم «${current.text}».")
         } else {
             attempts++
+            val hasPause = nodes.any { ArabicText.normalize(nodeText(it)) in setOf("pause", "pause video", "ايقاف مؤقت", "ايقاف التشغيل مؤقتا") }
+            val looksLikeResults = nodes.any {
+                val value = ArabicText.normalize(nodeText(it))
+                value.contains("نتائج") || value.contains("results") || id(it).contains("search_result")
+            }
+            if (current.text == "like" && attempts >= 3 && looksLikeResults && !hasPause) {
+                finish("لم أجد زر الإعجاب في صفحة النتائج؛ يجب تشغيل الفيديو أولًا.")
+                return
+            }
             if (current.text == "like" && current.packageName == "com.google.android.youtube" && attempts <= 8) {
                 // إذا طُلب الإعجاب من صفحة النتائج، افتح أول فيديو ثم أعد
                 // البحث عن زر الإعجاب بعد ظهور صفحة المشاهدة.
@@ -281,8 +300,8 @@ class NaffithAccessibilityService : AccessibilityService() {
             }
             // زر الإعجاب أسفل عنوان الفيديو في تطبيق يوتيوب وقد لا يظهر قبل
             // تمرير الشاشة قليلًا. أعد الفحص بعد تمريرين بدل إنهاء الخطة فورًا.
-            if (current.text == "like" && attempts % 8 == 0) swipeUp()
-            if (attempts > 45) finish("لم أجد زر قسم «${current.text}» في التطبيق الحالي.")
+            if (current.text == "like" && attempts in setOf(8, 16) && hasPause) swipeUp()
+            if (attempts > 22) finish("لم أجد زر قسم «${current.text}» في التطبيق الحالي.")
         }
     }
 
