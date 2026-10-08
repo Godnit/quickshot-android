@@ -24,6 +24,10 @@ class MainActivity : Activity() {
     private val planHandler = Handler(Looper.getMainLooper())
     private val pendingCommands = ArrayDeque<String>()
     private var planRunning = false
+    /** آخر تطبيق طلب المستخدم فتحه؛ يبقى سياقًا للأمر المختصر «ابحث عن…». */
+    private var contextPackage = ""
+    private var waitingForPackage = ""
+    private var waitingSince = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,8 +78,8 @@ class MainActivity : Activity() {
             is LocalAction.OpenAppAndCalculate -> openInstalledAppAndCalculate(action.appQuery, action.expression)
             is LocalAction.SearchYoutube -> searchYoutube(action.query, action.playFirst)
             is LocalAction.SearchChrome -> searchChrome(action.query, action.images, action.downloadImage, action.downloadCount)
-            is LocalAction.SearchWeb -> searchCurrentOrWeb(action.query)
-            is LocalAction.SearchCurrent -> searchCurrentApp(action.query)
+            is LocalAction.SearchWeb -> searchCurrentOrWeb(action.query, false)
+            is LocalAction.SearchCurrent -> searchCurrentApp(action.query, action.playFirst)
             is LocalAction.Write -> writeText(action)
             is LocalAction.Click -> clickLabel(action.label)
             is LocalAction.OpenFolder -> openFolder(action.folder)
@@ -85,7 +89,13 @@ class MainActivity : Activity() {
             LocalAction.ReadScreen -> readScreen()
             LocalAction.Back -> appendLog(if (NaffithAccessibilityService.back()) "نفّذ: رجعت للخلف." else "نفّذ: فعّل إمكانية الوصول أولًا.")
             LocalAction.Home -> appendLog(if (NaffithAccessibilityService.home()) "نفّذ: رجعت إلى الشاشة الرئيسية." else "نفّذ: فعّل إمكانية الوصول أولًا.")
-            LocalAction.Stop -> { NaffithAccessibilityService.stop(); appendLog("نفّذ: أوقفت الخطة الحالية.") }
+            LocalAction.Stop -> {
+                NaffithAccessibilityService.stop()
+                pendingCommands.clear()
+                planRunning = false
+                waitingForPackage = ""
+                appendLog("نفّذ: أوقفت الخطة الحالية.")
+            }
             LocalAction.Help -> showHelp()
             is LocalAction.Unknown -> appendLog("نفّذ: لم أفهم الأمر. اكتب «مساعدة» لرؤية أمثلة الأوامر.")
         }
@@ -93,9 +103,18 @@ class MainActivity : Activity() {
     }
 
     private fun runNextPlannedCommand() {
+        if (!planRunning) return
         if (NaffithAccessibilityService.isBusy()) {
             planHandler.postDelayed({ runNextPlannedCommand() }, 180L)
             return
+        }
+        if (waitingForPackage.isNotBlank()) {
+            val elapsed = android.os.SystemClock.uptimeMillis() - waitingSince
+            if (NaffithAccessibilityService.latestScreenPackage != waitingForPackage && elapsed < 4500L) {
+                planHandler.postDelayed({ runNextPlannedCommand() }, 120L)
+                return
+            }
+            waitingForPackage = ""
         }
         if (pendingCommands.isEmpty()) {
             planRunning = false
@@ -104,12 +123,13 @@ class MainActivity : Activity() {
         }
         val command = pendingCommands.removeFirst()
         executeSingleCommand(command)
+        waitingForPackage = contextPackage
+        waitingSince = android.os.SystemClock.uptimeMillis()
         if (pendingCommands.isNotEmpty()) {
-            // ننتظر انتهاء خطوة إمكانية الوصول بدل تأخير ثابت طويل بين كل الأوامر.
-            val delay = if (NaffithAccessibilityService.isBusy()) 180L else 350L
-            planHandler.postDelayed({ runNextPlannedCommand() }, delay)
+            // ننتظر انتهاء خطوة إمكانية الوصول وظهور التطبيق الهدف قبل الأمر التالي.
+            planHandler.postDelayed({ runNextPlannedCommand() }, 120L)
         } else {
-            planHandler.postDelayed({ runNextPlannedCommand() }, 1200L)
+            planHandler.postDelayed({ runNextPlannedCommand() }, 120L)
         }
     }
 
@@ -143,6 +163,7 @@ class MainActivity : Activity() {
             appendLog("نفّذ: لم أجد تطبيقًا مثبتًا باسم «$query». اكتب «ما هي التطبيقات المثبتة».")
             return
         }
+        contextPackage = app.packageName
         try {
             if (!launchExternal(app.intent)) {
                 appendLog("نفّذ: وجدت ${app.label} لكن لا يمكن تشغيله على هذا الهاتف.")
@@ -157,6 +178,7 @@ class MainActivity : Activity() {
     private fun openInstalledAppAndSearch(appQuery: String, searchQuery: String, playFirst: Boolean) {
         val app = catalog.find(appQuery)
         if (app == null) { appendLog("نفّذ: لم أجد تطبيق «$appQuery»."); return }
+        contextPackage = app.packageName
         val queued = NaffithAccessibilityService.requestSearch(app.packageName, searchQuery, playFirst)
         if (!launchExternal(app.intent)) { appendLog("نفّذ: لا أستطيع تشغيل ${app.label}."); return }
         appendLog(if (queued) {
@@ -168,6 +190,7 @@ class MainActivity : Activity() {
     private fun openInstalledAppAndCalculate(appQuery: String, expression: String) {
         val app = catalog.find(appQuery)
         if (app == null) { appendLog("نفّذ: لم أجد تطبيق الحاسبة. اكتب «ما هي التطبيقات المثبتة»."); return }
+        contextPackage = app.packageName
         val queued = NaffithAccessibilityService.requestCalculator(app.packageName, expression)
         if (!launchExternal(app.intent)) { appendLog("نفّذ: لا أستطيع تشغيل ${app.label}."); return }
         appendLog(if (queued) "نفّذ: فتحت ${app.label} وسأدخل $expression ثم أضغط يساوي."
@@ -176,6 +199,7 @@ class MainActivity : Activity() {
 
     private fun searchYoutube(query: String, playFirst: Boolean) {
         val youtube = catalog.find("يوتيوب")
+        youtube?.let { contextPackage = it.packageName }
         val url = if (query.isBlank()) "https://www.youtube.com" else "https://www.youtube.com/results?search_query=${Uri.encode(query)}"
         val queued = if (playFirst && youtube != null) NaffithAccessibilityService.requestPlayFirst(youtube.packageName, query) else false
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { youtube?.let { setPackage(it.packageName) } }
@@ -187,6 +211,7 @@ class MainActivity : Activity() {
 
     private fun searchChrome(query: String, images: Boolean, downloadImage: Boolean, downloadCount: Int) {
         val chrome = catalog.find("كروم")
+        chrome?.let { contextPackage = it.packageName }
         val url = if (images) "https://www.google.com/search?tbm=isch&q=${Uri.encode(query)}" else "https://www.google.com/search?q=${Uri.encode(query)}"
         val queued = if (downloadImage && images && chrome != null) {
             NaffithAccessibilityService.requestImageDownload(chrome.packageName, query, downloadCount.coerceIn(1, 9))
@@ -206,26 +231,30 @@ class MainActivity : Activity() {
         appendLog(if (images) "نفّذ: فتحت نتائج الصور عن «$query»." else "نفّذ: بحثت على الويب عن «$query».")
     }
 
-    private fun searchCurrentOrWeb(query: String) {
-        val current = NaffithAccessibilityService.latestScreenPackage
-        if (current.isNotBlank() && current != packageName) searchCurrentApp(query) else searchWeb(query)
+    private fun searchCurrentOrWeb(query: String, playFirst: Boolean) {
+        val current = if (contextPackage.isNotBlank()) contextPackage else NaffithAccessibilityService.latestScreenPackage
+        if (current.isNotBlank() && current != packageName) searchCurrentApp(query, playFirst) else searchWeb(query)
     }
 
-    private fun searchCurrentApp(query: String) {
-        var targetPackage = NaffithAccessibilityService.latestScreenPackage
+    private fun searchCurrentApp(query: String, playFirst: Boolean = false) {
+        var targetPackage = contextPackage.ifBlank { NaffithAccessibilityService.latestScreenPackage }
         val fileApp = catalog.findFiles()
         if (targetPackage.isBlank() || targetPackage == packageName) targetPackage = fileApp?.packageName.orEmpty()
         if (targetPackage.isBlank()) { searchWeb(query); return }
-        val queued = NaffithAccessibilityService.requestSearch(targetPackage, query)
-        if (targetPackage == fileApp?.packageName && NaffithAccessibilityService.latestScreenPackage != targetPackage && fileApp != null) {
-            launchExternal(fileApp.intent)
+        contextPackage = targetPackage
+        val queued = NaffithAccessibilityService.requestSearch(targetPackage, query, playFirst)
+        if (NaffithAccessibilityService.latestScreenPackage != targetPackage) {
+            val app = fileApp?.takeIf { it.packageName == targetPackage } ?: catalog.findPackage(targetPackage)
+            app?.let { launchExternal(it.intent) }
         }
         appendLog(if (queued) "نفّذ: سأبحث عن «$query» داخل التطبيق المفتوح." else "نفّذ: فعّل إمكانية الوصول للبحث داخل التطبيق المفتوح.")
     }
 
     private fun writeText(action: LocalAction.Write) {
-        val packageName = action.appQuery?.let { catalog.find(it)?.packageName } ?: NaffithAccessibilityService.latestScreenPackage
+        val packageName = action.appQuery?.let { catalog.find(it)?.packageName }
+            ?: contextPackage.ifBlank { NaffithAccessibilityService.latestScreenPackage }
         if (packageName.isBlank()) { appendLog("نفّذ: افتح التطبيق أولًا أو اكتب «اكتب في كروم ...»."); return }
+        contextPackage = packageName
         val queued = NaffithAccessibilityService.requestWrite(packageName, action.text, action.submit)
         val app = action.appQuery?.let { catalog.find(it) }
         if (app != null) launchExternal(app.intent)
@@ -233,7 +262,7 @@ class MainActivity : Activity() {
     }
 
     private fun clickLabel(label: String) {
-        val packageName = NaffithAccessibilityService.latestScreenPackage
+        val packageName = contextPackage.ifBlank { NaffithAccessibilityService.latestScreenPackage }
         val queued = if (packageName.isBlank()) false else NaffithAccessibilityService.requestClick(packageName, label)
         appendLog(if (queued) "نفّذ: سأضغط «$label»." else "نفّذ: لا توجد شاشة مستهدفة. افتح التطبيق أولًا.")
     }
@@ -244,9 +273,9 @@ class MainActivity : Activity() {
             appendLog("نفّذ: لم أجد تطبيق إدارة الملفات لفتح مجلد «$folder».")
             return
         }
-        val alreadyOpen = NaffithAccessibilityService.latestScreenPackage == fileApp.packageName
-        val queued = NaffithAccessibilityService.requestClick(fileApp.packageName, folder)
-        if (!alreadyOpen && !launchExternal(fileApp.intent)) {
+        contextPackage = fileApp.packageName
+        val queued = NaffithAccessibilityService.requestOpenFolder(fileApp.packageName, folder)
+        if (!launchExternal(fileApp.intent)) {
             appendLog("نفّذ: لا أستطيع تشغيل ${fileApp.label}.")
             return
         }
@@ -257,12 +286,14 @@ class MainActivity : Activity() {
     private fun openFiles() {
         val fileApp = catalog.findFiles() ?: catalog.find("الملفات")
         if (fileApp != null) {
-            if (launchExternal(fileApp.intent)) { appendLog("نفّذ: تم فتح ${fileApp.label}"); return }
+            contextPackage = fileApp.packageName
+            val queued = NaffithAccessibilityService.requestOpenFiles(fileApp.packageName)
+            if (launchExternal(fileApp.intent)) {
+                appendLog(if (queued) "نفّذ: تم فتح ${fileApp.label} وسأعرض جذر إدارة الملفات." else "نفّذ: تم فتح ${fileApp.label}")
+                return
+            }
         }
-        // هذا مسار احتياطي فقط للأجهزة التي لا تثبت أي تطبيق ملفات مستقل.
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
-        if (launchExternal(intent)) appendLog("نفّذ: لم أجد تطبيق ملفات مستقلًا، ففتحت منتقي الملفات.")
-        else appendLog("نفّذ: لم أجد مدير ملفات متاحًا.")
+        appendLog("نفّذ: لم أجد مدير ملفات مستقلًا على هذا الهاتف.")
     }
 
     private fun openSettings() { launchExternal(Intent(Settings.ACTION_SETTINGS)); appendLog("نفّذ: تم فتح الإعدادات.") }
