@@ -18,14 +18,6 @@ renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/default_filters/use_nearest_mipmap_filter=false
 
-[android]
-package/unique_name="com.soccer3d.mobile"
-package/name="Soccer 3D"
-version/code=1
-version/name="1.0.0"
-min_sdk_version=27
-target_sdk_version=34
-
 [input]
 move_left={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":65)]}
 move_right={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":68)]}
