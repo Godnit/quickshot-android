@@ -264,8 +264,7 @@ class NaffithAccessibilityService : AccessibilityService() {
             }
             2 -> {
                 val download = nodes.firstOrNull { it.isVisibleToUser &&
-                    (AutomationRules.downloadButton(nodeText(it)) || id(it).contains("download") || id(it).contains("save") ||
-                        id(it).contains("context_menu")) && clickable(it) }
+                    (AutomationRules.downloadButton(nodeText(it)) || id(it).contains("download") || id(it).contains("save")) && clickable(it) }
                 if (download != null && click(download)) {
                     downloadedImageKeys += beforePlay
                     current.downloaded++
@@ -292,7 +291,7 @@ class NaffithAccessibilityService : AccessibilityService() {
     /** يخرج من مجلد التنزيلات إلى واجهة مدير الملفات قبل تنفيذ أي أمر داخله. */
     private fun fileManagerStep(current: Job, nodes: List<AccessibilityNodeInfo>) {
         val texts = nodes.map(::nodeText).map(ArabicText::normalize).filter { it.isNotBlank() }
-        val downloadsScreen = texts.any { it == "تنزيلات" || it == "downloads" }
+        val downloadsScreen = texts.any { it == "تنزيلات" || it == "التنزيلات" || it == "downloads" }
         val targetFolder = current.kind == Kind.OPEN_FOLDER
 
         if (!downloadsScreen && stage == 0) {
