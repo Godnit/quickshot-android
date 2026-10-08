@@ -203,7 +203,7 @@ class MainActivity : Activity() {
         youtube?.let { contextPackage = it.packageName }
         val url = if (query.isBlank()) "https://www.youtube.com" else "https://www.youtube.com/results?search_query=${Uri.encode(query)}"
         val queued = if (playFirst && youtube != null) NaffithAccessibilityService.requestPlayFirst(youtube.packageName, query) else false
-        val intent = if (query.isBlank()) {
+        val intent = if (query.isBlank() || youtube == null) {
             Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { youtube?.let { setPackage(it.packageName) } }
         } else {
             // ACTION_VIEW لا يبدأ البحث في بعض إصدارات YouTube؛ ACTION_SEARCH
