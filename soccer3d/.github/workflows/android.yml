@@ -1,0 +1,22 @@
+name: Build Android APK
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export APK with Godot
+        uses: firebelley/godot-android-action@v2.2.0
+        with:
+          godot-version: 4.2.2
+          export-release: true
+          archive-output: true
+          custom-export-options: "--headless --path soccer3d --export-release 'Android' build/Soccer3D.apk"
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Soccer3D-Android
+          path: soccer3d/build/Soccer3D.apk
