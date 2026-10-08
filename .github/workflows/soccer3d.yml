@@ -27,12 +27,15 @@ jobs:
         run: |
           set -e
           mkdir -p "$HOME/.android" "$HOME/.config/godot"
+          SDK_PATH="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          JAVA_PATH="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"
+          echo "SDK_PATH=$SDK_PATH JAVA_PATH=$JAVA_PATH"
           keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
           cat > "$HOME/.config/godot/editor_settings-4.tres" <<EOF
           [gd_resource type="EditorSettings" format=3]
           [resource]
-          export/android/java_sdk_path = "$JAVA_HOME"
-          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_PATH"
+          export/android/android_sdk_path = "$SDK_PATH"
           export/android/debug_keystore = "$HOME/.android/debug.keystore"
           export/android/debug_keystore_user = "androiddebugkey"
           export/android/debug_keystore_pass = "android"
