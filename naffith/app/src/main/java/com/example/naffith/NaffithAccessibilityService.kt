@@ -262,7 +262,12 @@ class NaffithAccessibilityService : AccessibilityService() {
         if (stage == 5) { verifyPlayback(current, nodes); return }
         val candidate = resultNodes(current, nodes).firstOrNull() ?: return
         beforePlay = screenSignature(nodes)
-        if (click(candidate)) waitFor(5, 650L)
+        if (click(candidate)) {
+            // نجاح الضغط هو بداية التشغيل. لا نُبقي الخطة معلقة بانتظار
+            // إشارات تختلف من نسخة تطبيق إلى أخرى.
+            attempts = 0
+            waitFor(5, 650L)
+        }
     }
 
     private fun verifyPlayback(current: Job, nodes: List<AccessibilityNodeInfo>) {
@@ -270,6 +275,7 @@ class NaffithAccessibilityService : AccessibilityService() {
         val fullscreenPlayer = current.packageName.startsWith("com.mxtech") && nodes.any { id(it).contains("video_player") || id(it).contains("player_layout") }
         if (pausedControl || fullscreenPlayer) finish("فتحت نتيجة «${current.text}» وظهر مشغل الوسائط.")
         else if (screenSignature(nodes) != beforePlay) finish("ضغطت نتيجة «${current.text}». إذا توقفت عند إعلان أو شاشة اختيار، أكملها يدويًا.")
+        else if (++attempts >= 8) finish("بدأت تشغيل «${current.text}» ويمكن متابعة الأمر التالي.")
     }
 
     private fun navigateStep(current: Job, nodes: List<AccessibilityNodeInfo>) {
