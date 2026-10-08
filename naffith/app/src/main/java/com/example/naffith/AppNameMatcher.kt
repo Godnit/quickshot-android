@@ -31,7 +31,15 @@ object AppNameMatcher {
         Group(listOf("التنزيلات", "downloads"), listOf("com.android.providers.downloads.ui")),
         Group(listOf("لقطة شاشة", "لقطة سريعة", "لقطة سريعه", "screenshot", "quickshot"), emptyList()),
         Group(listOf("واتساب", "واتس اب", "whatsapp"), listOf("com.whatsapp", "com.whatsapp.w4b")),
-        Group(listOf("موسيقى play", "play music", "موسيقى", "مشغل الموسيقى", "music"), listOf("com.google.android.music"))
+        Group(listOf("موسيقى play", "play music", "موسيقى", "مشغل الموسيقى", "music"), listOf("com.google.android.music")),
+        // أسماء مختصرة شائعة للعبة Hill Climb Racing الظاهرة في صورة المستخدم.
+        Group(
+            listOf(
+                "السيارة", "سياره", "لعبة السيارة", "لعبه السياره", "لعبة سيارات", "لعبه سيارات",
+                "سباق السيارات", "hill climb", "hill climb racing", "car game", "racing game"
+            ),
+            listOf("com.fingersoft.hillclimb", "com.fingersoft.hillclimb2", "com.fingersoft.hcr2")
+        )
     )
 
     fun find(query: String, apps: List<AppName>): AppName? {

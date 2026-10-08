@@ -20,7 +20,15 @@ import android.view.accessibility.AccessibilityWindowInfo
 /** خطة قصيرة ومحددة بطلب المستخدم، مع انتظار الشاشة وتوقف عند غياب العناصر. */
 class NaffithAccessibilityService : AccessibilityService() {
     private enum class Kind { SEARCH, WRITE, CALCULATE, PLAY, DOWNLOAD_IMAGE, CLICK }
-    private data class Job(val packageName: String, val kind: Kind, val text: String, val playFirst: Boolean = false, val submit: Boolean = false)
+    private data class Job(
+        val packageName: String,
+        val kind: Kind,
+        val text: String,
+        val playFirst: Boolean = false,
+        val submit: Boolean = false,
+        val downloadCount: Int = 1,
+        var downloaded: Int = 0
+    )
     private val handler = Handler(Looper.getMainLooper())
     private var job: Job? = null
     private var stage = 0
@@ -31,11 +39,12 @@ class NaffithAccessibilityService : AccessibilityService() {
     private var beforeSubmit = ""
     private var beforePlay = ""
     private var imageRect: Rect? = null
+    private val downloadedImageKeys = linkedSetOf<String>()
     private val tick = object : Runnable {
         override fun run() {
             if (job == null) return
             runStep()
-            if (job != null) handler.postDelayed(this, 300L)
+            if (job != null) handler.postDelayed(this, 100L)
         }
     }
 
@@ -82,10 +91,11 @@ class NaffithAccessibilityService : AccessibilityService() {
         beforeSubmit = ""
         beforePlay = ""
         imageRect = null
+        downloadedImageKeys.clear()
         val now = SystemClock.uptimeMillis()
-        nextAt = now + 700L
+        nextAt = now + 220L
         deadline = now + 30000L
-        handler.postDelayed(tick, 300L)
+        handler.postDelayed(tick, 100L)
     }
 
     private fun runStep() {
@@ -138,7 +148,7 @@ class NaffithAccessibilityService : AccessibilityService() {
                 // افتح حقل البحث إذا كان الأمر بحثًا أو كتابة في تطبيق ذي بحث.
                 val button = nodes.firstOrNull { !it.isEditable && it.isVisibleToUser && clickable(it) &&
                     (AutomationRules.submitButton(nodeText(it), id(it)) || id(it).substringAfterLast('/') in setOf("search", "menu_search", "action_search", "search_btn")) }
-                if (button != null && click(button)) waitFor(1, 600L)
+                if (button != null && click(button)) waitFor(1, 280L)
             }
             1 -> {
                 if (input == null) return
@@ -146,7 +156,7 @@ class NaffithAccessibilityService : AccessibilityService() {
                 val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, current.text) }
                 if (input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
                     if (current.kind == Kind.WRITE && !current.submit) finish("كتبت النص المطلوب داخل التطبيق.")
-                    else waitFor(2, 500L)
+                    else waitFor(2, 180L)
                 }
             }
             2 -> {
@@ -156,9 +166,9 @@ class NaffithAccessibilityService : AccessibilityService() {
                 beforeSubmit = screenSignature(nodes)
                 val submitted = filtered || submitInput(input, nodes)
                 if (submitted) {
-                    if (current.playFirst) { beforePlay = ""; waitFor(3, 1200L) }
+                    if (current.playFirst) { beforePlay = ""; waitFor(3, 650L) }
                     else if (filtered) finish("كتبت «${current.text}» وظهرت ملفات مطابقة.")
-                    else waitFor(4, 700L)
+                    else waitFor(4, 260L)
                 } else if (++attempts > 10) {
                     finish("كتبت «${current.text}»، لكن لم أجد زر بحث/Enter متاحًا. اضغطه يدويًا في هذا التطبيق.")
                 }
@@ -193,14 +203,14 @@ class NaffithAccessibilityService : AccessibilityService() {
     private fun calculatorStep(current: Job, nodes: List<AccessibilityNodeInfo>) {
         if (stage == 0) {
             val clear = nodes.firstOrNull { it.isVisibleToUser && clickable(it) && AutomationRules.isClear(nodeText(it), id(it)) }
-            if (clear != null && click(clear)) { waitFor(1, 400L); return }
+            if (clear != null && click(clear)) { waitFor(1, 100L); return }
             val input = nodes.firstOrNull { it.isEditable && !it.isPassword && it.isVisibleToUser }
             if (input != null) {
                 val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, current.text) }
-                if (input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) { keyIndex = current.text.length; waitFor(1, 400L) }
+                if (input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) { keyIndex = current.text.length; waitFor(1, 90L) }
             } else {
                 // الآلات الحاسبة ذات لوحة الأزرار لا تملك EditText؛ انتقل مباشرة إلى الأزرار.
-                waitFor(1, 400L)
+                waitFor(1, 90L)
             }
             return
         }
@@ -210,7 +220,7 @@ class NaffithAccessibilityService : AccessibilityService() {
         val key = nodes.firstOrNull { it.isVisibleToUser && !it.isEditable && clickable(it) && AutomationRules.calculatorKey(nodeText(it), id(it), expected) }
         if (key != null && click(key)) {
             keyIndex++
-            nextAt = SystemClock.uptimeMillis() + 350L
+            nextAt = SystemClock.uptimeMillis() + 85L
             if (keyIndex == keys.length) finish("أدخلت ${current.text} وضغطت يساوي في الحاسبة.")
         }
     }
@@ -226,7 +236,7 @@ class NaffithAccessibilityService : AccessibilityService() {
         if (stage == 5) { verifyPlayback(current, nodes); return }
         val candidate = resultNodes(current, nodes).firstOrNull() ?: return
         beforePlay = screenSignature(nodes)
-        if (click(candidate)) waitFor(5, 1300L)
+        if (click(candidate)) waitFor(5, 650L)
     }
 
     private fun verifyPlayback(current: Job, nodes: List<AccessibilityNodeInfo>) {
@@ -239,21 +249,32 @@ class NaffithAccessibilityService : AccessibilityService() {
     private fun imageStep(current: Job, nodes: List<AccessibilityNodeInfo>) {
         when (stage) {
             0 -> {
-                val images = imageNodes(nodes)
+                val images = imageNodes(nodes).filter { imageKey(it) !in downloadedImageKeys }
                 if (images.isEmpty()) return
                 val selected = images[kotlin.random.Random.nextInt(images.size)]
                 imageRect = bounds(selected)
-                if (click(selected)) waitFor(1, 1300L)
+                beforePlay = imageKey(selected)
+                if (click(selected)) waitFor(1, 700L)
             }
             1 -> {
                 val preview = imageNodes(nodes).maxByOrNull { bounds(it).width() * bounds(it).height() } ?: return
                 val accepted = preview.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK) || touch(preview, 850L)
-                if (accepted) waitFor(2, 900L)
+                if (accepted) waitFor(2, 500L)
             }
             2 -> {
                 val download = nodes.firstOrNull { it.isVisibleToUser &&
                     (AutomationRules.downloadButton(nodeText(it)) || id(it).contains("download") || id(it).contains("save")) && clickable(it) }
-                if (download != null && click(download)) finish("اخترت صورة من «${current.text}» وضغطت تنزيل الصورة في المتصفح. تحقق من مجلد التنزيلات.")
+                if (download != null && click(download)) {
+                    downloadedImageKeys += beforePlay
+                    current.downloaded++
+                    if (current.downloaded >= current.downloadCount) {
+                        finish("نزّلت ${current.downloaded} صور من «${current.text}». تحقق من مجلد التنزيلات.")
+                    } else {
+                        // ارجع إلى شبكة النتائج ثم اختر صورة مختلفة للعدد المطلوب.
+                        performGlobalAction(GLOBAL_ACTION_BACK)
+                        waitFor(0, 650L)
+                    }
+                }
                 else if (++attempts > 15) finish("فتحت نتائج الصور، لكن المتصفح لم يعرض خيار تنزيل الصورة. احفظ الصورة يدويًا.")
             }
         }
@@ -268,6 +289,11 @@ class NaffithAccessibilityService : AccessibilityService() {
                 r.width() >= 70 * density && r.height() >= 70 * density && r.top >= 80 * density &&
                 listOf("google", "logo", "شعار", "avatar", "حساب").none { word -> label.contains(word) }
         }
+    }
+
+    private fun imageKey(node: AccessibilityNodeInfo): String {
+        val r = bounds(node)
+        return "${r.left}:${r.top}:${r.right}:${r.bottom}:${nodeText(node)}"
     }
 
     private fun waitFor(newStage: Int, delay: Long) { stage = newStage; nextAt = SystemClock.uptimeMillis() + delay }
@@ -340,11 +366,13 @@ class NaffithAccessibilityService : AccessibilityService() {
                 ?.split(':')?.mapNotNull(ComponentName::unflattenFromString)?.any { it == expected } == true
         }
         private fun request(job: Job): Boolean { val service = instance ?: return false; service.begin(job); return true }
+        fun isBusy(): Boolean = instance?.job != null
         fun requestSearch(packageName: String, query: String, playFirst: Boolean = false) = request(Job(packageName, Kind.SEARCH, query, playFirst))
         fun requestWrite(packageName: String, text: String, submit: Boolean) = request(Job(packageName, Kind.WRITE, text, submit = submit))
         fun requestCalculator(packageName: String, expression: String) = request(Job(packageName, Kind.CALCULATE, expression))
         fun requestPlayFirst(packageName: String, query: String) = request(Job(packageName, Kind.PLAY, query))
-        fun requestImageDownload(packageName: String, query: String) = request(Job(packageName, Kind.DOWNLOAD_IMAGE, query))
+        fun requestImageDownload(packageName: String, query: String, count: Int = 1) =
+            request(Job(packageName, Kind.DOWNLOAD_IMAGE, query, downloadCount = count.coerceIn(1, 9)))
         fun requestClick(packageName: String, label: String) = request(Job(packageName, Kind.CLICK, label))
         fun stop() { instance?.finish("أوقفت التنفيذ.") }
         fun back() = instance?.performGlobalAction(GLOBAL_ACTION_BACK) == true

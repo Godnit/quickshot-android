@@ -11,6 +11,19 @@ data class InstalledApp(val packageName: String, val label: String, val intent: 
 class AppCatalog(private val context: Context) {
     private val pm = context.packageManager
 
+    private val fileManagerPackages = listOf(
+        "com.google.android.apps.nbu.files",
+        "com.google.android.documentsui",
+        "com.android.documentsui",
+        "com.sec.android.app.myfiles",
+        "com.mi.android.globalFileexplorer",
+        "com.android.filemanager",
+        "com.oneplus.filemanager",
+        "com.coloros.filemanager",
+        "com.vivo.filemanager",
+        "com.huawei.hidisk"
+    )
+
     @Suppress("DEPRECATION")
     fun all(): List<InstalledApp> {
         val apps = LinkedHashMap<String, InstalledApp>()
@@ -42,5 +55,46 @@ class AppCatalog(private val context: Context) {
         val apps = all()
         val match = AppNameMatcher.find(query, apps.map { AppName(it.packageName, it.label) }) ?: return null
         return apps.firstOrNull { it.packageName == match.packageName }
+    }
+
+    /**
+     * يختار تطبيق إدارة الملفات الحقيقي.  ACTION_OPEN_DOCUMENT هو منتقي ملفات
+     * يبدأ غالبًا من Downloads، لذلك لا نستخدمه كاختيار أول للأمر «افتح الملفات».
+     */
+    fun findFiles(): InstalledApp? {
+        val filesIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_FILES)
+        val handlers = pm.queryIntentActivities(filesIntent, 0)
+            .filter { info ->
+                val pkg = info.activityInfo?.packageName.orEmpty()
+                pkg.isNotBlank() && pkg != context.packageName && !pkg.contains("downloads", ignoreCase = true)
+            }
+
+        fun fromHandler(info: android.content.pm.ResolveInfo): InstalledApp? {
+            val activity = info.activityInfo ?: return null
+            if (!activity.enabled || !activity.exported) return null
+            val launch = Intent(filesIntent).setComponent(ComponentName(activity.packageName, activity.name))
+            return InstalledApp(activity.packageName, info.loadLabel(pm).toString().trim(), launch)
+        }
+
+        handlers.sortedWith(
+            compareBy<android.content.pm.ResolveInfo> {
+                val pkg = it.activityInfo?.packageName.orEmpty()
+                val preferred = fileManagerPackages.indexOfFirst { candidate -> candidate.equals(pkg, ignoreCase = true) }
+                if (preferred < 0) Int.MAX_VALUE else preferred
+            }.thenBy { it.loadLabel(pm).toString() }
+        ).firstNotNullOfOrNull(::fromHandler)?.let { return it }
+
+        // بعض واجهات الشركات لا تعلن CATEGORY_APP_FILES لكنها تملك اختصار تشغيل.
+        for (pkg in fileManagerPackages) {
+            val launch = pm.getLaunchIntentForPackage(pkg) ?: continue
+            val info = try { pm.getApplicationInfo(pkg, 0) } catch (_: PackageManager.NameNotFoundException) { continue }
+            if (info.enabled) return InstalledApp(pkg, info.loadLabel(pm).toString().trim(), launch)
+        }
+
+        return all().firstOrNull { app ->
+            val label = ArabicText.normalize(app.label)
+            val pkg = app.packageName.lowercase()
+            !pkg.contains("download") && (label.contains("file") || label.contains("ملف") || label.contains("files"))
+        }
     }
 }

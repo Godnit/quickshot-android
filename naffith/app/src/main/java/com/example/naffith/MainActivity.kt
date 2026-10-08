@@ -73,8 +73,9 @@ class MainActivity : Activity() {
             is LocalAction.OpenAppAndSearch -> openInstalledAppAndSearch(action.appQuery, action.searchQuery, action.playFirst)
             is LocalAction.OpenAppAndCalculate -> openInstalledAppAndCalculate(action.appQuery, action.expression)
             is LocalAction.SearchYoutube -> searchYoutube(action.query, action.playFirst)
-            is LocalAction.SearchChrome -> searchChrome(action.query, action.images, action.downloadImage)
-            is LocalAction.SearchWeb -> searchWeb(action.query)
+            is LocalAction.SearchChrome -> searchChrome(action.query, action.images, action.downloadImage, action.downloadCount)
+            is LocalAction.SearchWeb -> searchCurrentOrWeb(action.query)
+            is LocalAction.SearchCurrent -> searchCurrentApp(action.query)
             is LocalAction.Write -> writeText(action)
             is LocalAction.Click -> clickLabel(action.label)
             is LocalAction.OpenFolder -> openFolder(action.folder)
@@ -92,6 +93,10 @@ class MainActivity : Activity() {
     }
 
     private fun runNextPlannedCommand() {
+        if (NaffithAccessibilityService.isBusy()) {
+            planHandler.postDelayed({ runNextPlannedCommand() }, 180L)
+            return
+        }
         if (pendingCommands.isEmpty()) {
             planRunning = false
             appendLog("نفّذ: اكتملت الخطة.")
@@ -100,8 +105,9 @@ class MainActivity : Activity() {
         val command = pendingCommands.removeFirst()
         executeSingleCommand(command)
         if (pendingCommands.isNotEmpty()) {
-            // نمنح التطبيق وإمكانية الوصول وقتًا لفتح الشاشة قبل الأمر التالي.
-            planHandler.postDelayed({ runNextPlannedCommand() }, 6500L)
+            // ننتظر انتهاء خطوة إمكانية الوصول بدل تأخير ثابت طويل بين كل الأوامر.
+            val delay = if (NaffithAccessibilityService.isBusy()) 180L else 350L
+            planHandler.postDelayed({ runNextPlannedCommand() }, delay)
         } else {
             planHandler.postDelayed({ runNextPlannedCommand() }, 1200L)
         }
@@ -119,7 +125,7 @@ class MainActivity : Activity() {
             val previous = current.lastOrNull()?.let { ArabicText.normalize(it) }
             val startsNew = current.isNotEmpty() && (
                 normalized in starts ||
-                    bare in setOf("افتح", "ادخل", "دخل", "اذهب") && normalized.startsWith("و")
+                    bare in starts && normalized.startsWith("و")
                 )
             if (startsNew) {
                 parts += current.joinToString(" ")
@@ -138,7 +144,10 @@ class MainActivity : Activity() {
             return
         }
         try {
-            startActivity(app.intent)
+            if (!launchExternal(app.intent)) {
+                appendLog("نفّذ: وجدت ${app.label} لكن لا يمكن تشغيله على هذا الهاتف.")
+                return
+            }
             appendLog("نفّذ: تم فتح ${app.label}")
         } catch (_: ActivityNotFoundException) {
             appendLog("نفّذ: وجدت ${app.label} لكن لا يمكن تشغيله على هذا الهاتف.")
@@ -149,7 +158,7 @@ class MainActivity : Activity() {
         val app = catalog.find(appQuery)
         if (app == null) { appendLog("نفّذ: لم أجد تطبيق «$appQuery»."); return }
         val queued = NaffithAccessibilityService.requestSearch(app.packageName, searchQuery, playFirst)
-        try { startActivity(app.intent) } catch (_: ActivityNotFoundException) { appendLog("نفّذ: لا أستطيع تشغيل ${app.label}."); return }
+        if (!launchExternal(app.intent)) { appendLog("نفّذ: لا أستطيع تشغيل ${app.label}."); return }
         appendLog(if (queued) {
             if (playFirst) "نفّذ: فتحت ${app.label}، وسأبحث عن «$searchQuery» ثم أحاول تشغيل أول نتيجة."
             else "نفّذ: فتحت ${app.label} وسأكتب «$searchQuery» ثم أرسل البحث."
@@ -160,7 +169,7 @@ class MainActivity : Activity() {
         val app = catalog.find(appQuery)
         if (app == null) { appendLog("نفّذ: لم أجد تطبيق الحاسبة. اكتب «ما هي التطبيقات المثبتة»."); return }
         val queued = NaffithAccessibilityService.requestCalculator(app.packageName, expression)
-        try { startActivity(app.intent) } catch (_: ActivityNotFoundException) { appendLog("نفّذ: لا أستطيع تشغيل ${app.label}."); return }
+        if (!launchExternal(app.intent)) { appendLog("نفّذ: لا أستطيع تشغيل ${app.label}."); return }
         appendLog(if (queued) "نفّذ: فتحت ${app.label} وسأدخل $expression ثم أضغط يساوي."
         else "نفّذ: فتحت ${app.label}. فعّل إمكانية الوصول لكي أضغط أزرار الحاسبة.")
     }
@@ -170,20 +179,22 @@ class MainActivity : Activity() {
         val url = if (query.isBlank()) "https://www.youtube.com" else "https://www.youtube.com/results?search_query=${Uri.encode(query)}"
         val queued = if (playFirst && youtube != null) NaffithAccessibilityService.requestPlayFirst(youtube.packageName, query) else false
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { youtube?.let { setPackage(it.packageName) } }
-        try { startActivity(intent) } catch (_: ActivityNotFoundException) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+        if (!launchExternal(intent)) launchExternal(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         appendLog(if (query.isBlank()) "نفّذ: فتحت يوتيوب."
         else if (playFirst && queued) "نفّذ: بحثت في يوتيوب عن «$query» وسأحاول تشغيل أول نتيجة."
         else "نفّذ: بحثت في يوتيوب عن «$query».")
     }
 
-    private fun searchChrome(query: String, images: Boolean, downloadImage: Boolean) {
+    private fun searchChrome(query: String, images: Boolean, downloadImage: Boolean, downloadCount: Int) {
         val chrome = catalog.find("كروم")
         val url = if (images) "https://www.google.com/search?tbm=isch&q=${Uri.encode(query)}" else "https://www.google.com/search?q=${Uri.encode(query)}"
-        val queued = if (downloadImage && images && chrome != null) NaffithAccessibilityService.requestImageDownload(chrome.packageName, query) else false
+        val queued = if (downloadImage && images && chrome != null) {
+            NaffithAccessibilityService.requestImageDownload(chrome.packageName, query, downloadCount.coerceIn(1, 9))
+        } else false
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { chrome?.let { setPackage(it.packageName) } }
-        try { startActivity(intent) } catch (_: ActivityNotFoundException) { searchWeb(query, images); return }
+        if (!launchExternal(intent)) { searchWeb(query, images); return }
         appendLog(when {
-            downloadImage && images && queued -> "نفّذ: فتحت صور Google عن «$query» وسأحاول تنزيل صورة عشوائية."
+            downloadImage && images && queued -> "نفّذ: فتحت صور Google عن «$query» وسأحاول تنزيل ${downloadCount.coerceIn(1, 9)} صور."
             images -> "نفّذ: فتحت صور Google عن «$query»."
             else -> "نفّذ: بحثت في Chrome عن «$query»."
         })
@@ -191,8 +202,25 @@ class MainActivity : Activity() {
 
     private fun searchWeb(query: String, images: Boolean = false) {
         val url = if (images) "https://www.google.com/search?tbm=isch&q=${Uri.encode(query)}" else "https://www.google.com/search?q=${Uri.encode(query)}"
-        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        launchExternal(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         appendLog(if (images) "نفّذ: فتحت نتائج الصور عن «$query»." else "نفّذ: بحثت على الويب عن «$query».")
+    }
+
+    private fun searchCurrentOrWeb(query: String) {
+        val current = NaffithAccessibilityService.latestScreenPackage
+        if (current.isNotBlank() && current != packageName) searchCurrentApp(query) else searchWeb(query)
+    }
+
+    private fun searchCurrentApp(query: String) {
+        var targetPackage = NaffithAccessibilityService.latestScreenPackage
+        val fileApp = catalog.findFiles()
+        if (targetPackage.isBlank() || targetPackage == packageName) targetPackage = fileApp?.packageName.orEmpty()
+        if (targetPackage.isBlank()) { searchWeb(query); return }
+        val queued = NaffithAccessibilityService.requestSearch(targetPackage, query)
+        if (targetPackage == fileApp?.packageName && NaffithAccessibilityService.latestScreenPackage != targetPackage && fileApp != null) {
+            launchExternal(fileApp.intent)
+        }
+        appendLog(if (queued) "نفّذ: سأبحث عن «$query» داخل التطبيق المفتوح." else "نفّذ: فعّل إمكانية الوصول للبحث داخل التطبيق المفتوح.")
     }
 
     private fun writeText(action: LocalAction.Write) {
@@ -200,7 +228,7 @@ class MainActivity : Activity() {
         if (packageName.isBlank()) { appendLog("نفّذ: افتح التطبيق أولًا أو اكتب «اكتب في كروم ...»."); return }
         val queued = NaffithAccessibilityService.requestWrite(packageName, action.text, action.submit)
         val app = action.appQuery?.let { catalog.find(it) }
-        if (app != null) try { startActivity(app.intent) } catch (_: ActivityNotFoundException) { }
+        if (app != null) launchExternal(app.intent)
         appendLog(if (queued) "نفّذ: سأكتب «${action.text}»${if (action.submit) " ثم أرسلها." else "."}" else "نفّذ: فعّل إمكانية الوصول لكي أكتب داخل التطبيق.")
     }
 
@@ -211,13 +239,14 @@ class MainActivity : Activity() {
     }
 
     private fun openFolder(folder: String) {
-        val fileApp = catalog.find("الملفات")
+        val fileApp = catalog.findFiles() ?: catalog.find("الملفات")
         if (fileApp == null) {
             appendLog("نفّذ: لم أجد تطبيق إدارة الملفات لفتح مجلد «$folder».")
             return
         }
+        val alreadyOpen = NaffithAccessibilityService.latestScreenPackage == fileApp.packageName
         val queued = NaffithAccessibilityService.requestClick(fileApp.packageName, folder)
-        try { startActivity(fileApp.intent) } catch (_: ActivityNotFoundException) {
+        if (!alreadyOpen && !launchExternal(fileApp.intent)) {
             appendLog("نفّذ: لا أستطيع تشغيل ${fileApp.label}.")
             return
         }
@@ -226,16 +255,17 @@ class MainActivity : Activity() {
     }
 
     private fun openFiles() {
-        val fileApp = catalog.find("الملفات")
+        val fileApp = catalog.findFiles() ?: catalog.find("الملفات")
         if (fileApp != null) {
-            try { startActivity(fileApp.intent); appendLog("نفّذ: تم فتح ${fileApp.label}"); return } catch (_: ActivityNotFoundException) { }
+            if (launchExternal(fileApp.intent)) { appendLog("نفّذ: تم فتح ${fileApp.label}"); return }
         }
+        // هذا مسار احتياطي فقط للأجهزة التي لا تثبت أي تطبيق ملفات مستقل.
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
-        try { startActivityForResult(intent, REQUEST_OPEN_FILE); appendLog("نفّذ: فتحت منتقي الملفات.") }
-        catch (_: ActivityNotFoundException) { appendLog("نفّذ: لم أجد مدير ملفات متاحًا.") }
+        if (launchExternal(intent)) appendLog("نفّذ: لم أجد تطبيق ملفات مستقلًا، ففتحت منتقي الملفات.")
+        else appendLog("نفّذ: لم أجد مدير ملفات متاحًا.")
     }
 
-    private fun openSettings() { startActivity(Intent(Settings.ACTION_SETTINGS)); appendLog("نفّذ: تم فتح الإعدادات.") }
+    private fun openSettings() { launchExternal(Intent(Settings.ACTION_SETTINGS)); appendLog("نفّذ: تم فتح الإعدادات.") }
 
     private fun listInstalledApps() {
         val apps = catalog.all()
@@ -256,6 +286,23 @@ class MainActivity : Activity() {
     private fun appendLog(message: String) {
         val current = logView.text.toString()
         logView.text = message + if (current.isBlank()) "" else "\n\n$current"
+    }
+
+    /** يفرض تشغيل التطبيق الهدف في مهمة خارجية بدل أي مسار داخل واجهة نفّذ. */
+    private fun launchExternal(intent: Intent): Boolean {
+        val external = Intent(intent).addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+        )
+        return try {
+            startActivity(external)
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
     }
 
     companion object { private const val REQUEST_OPEN_FILE = 1001 }

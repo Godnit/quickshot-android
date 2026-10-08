@@ -52,6 +52,13 @@ object AutomationRules {
         val wanted = ArabicText.normalize(target)
         if (value == wanted || value.contains(wanted)) return true
         val name = id.lowercase()
+        if (wanted in setOf("قرص الذاكره", "بطاقه الذاكره", "الذاكره الداخليه", "internal storage", "sd card", "storage")) {
+            val storageLabels = setOf(
+                "قرص الذاكره", "بطاقه الذاكره", "الذاكره الداخليه", "التخزين الداخلي", "وحده التخزين",
+                "وحده التخزين الداخليه", "internal storage", "phone", "storage", "sd card", "memory card", "بطاقه sd"
+            )
+            if (storageLabels.any { value.contains(it) } || name.contains("storage") || name.contains("sdcard") || name.contains("memory")) return true
+        }
         return when {
             wanted in setOf("اعجاب", "لايك", "اعجبني", "like") ->
                 value.contains("اعجب") || value.contains("like") || name.contains("like")

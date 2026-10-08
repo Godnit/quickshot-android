@@ -7,8 +7,15 @@ sealed class LocalAction {
     data class OpenAppAndSearch(val appQuery: String, val searchQuery: String, val playFirst: Boolean = false) : LocalAction()
     data class OpenAppAndCalculate(val appQuery: String, val expression: String) : LocalAction()
     data class SearchYoutube(val query: String, val playFirst: Boolean) : LocalAction()
-    data class SearchChrome(val query: String, val images: Boolean, val downloadImage: Boolean = false) : LocalAction()
+    data class SearchChrome(
+        val query: String,
+        val images: Boolean,
+        val downloadImage: Boolean = false,
+        val downloadCount: Int = 0
+    ) : LocalAction()
     data class SearchWeb(val query: String) : LocalAction()
+    /** بحث في التطبيق الظاهر حاليًا، ويُستخدم خصوصًا لمدير الملفات. */
+    data class SearchCurrent(val query: String) : LocalAction()
     data class Write(val appQuery: String?, val text: String, val submit: Boolean) : LocalAction()
     data class Click(val label: String) : LocalAction()
     data class OpenFolder(val folder: String) : LocalAction()
@@ -36,7 +43,9 @@ class RuleBasedArabicBrain : LocalBrain {
         "تليجرام", "تلجرام", "تيليجرام", "telegram", "ماسنجر", "messenger", "فيسبوك", "facebook",
         "انستقرام", "انستغرام", "instagram", "تيك توك", "تيكتوك", "tiktok", "الرسائل", "messages",
         "جهات الاتصال", "الأسماء", "اسماء", "contacts", "الهاتف", "phone", "البريد الالكتروني", "جيميل", "gmail",
-        "الساعة", "clock", "مسجل الصوت", "مسجل صوتي", "voice recorder", "الراديو", "راديو fm", "fm radio"
+        "الساعة", "clock", "مسجل الصوت", "مسجل صوتي", "voice recorder", "الراديو", "راديو fm", "fm radio",
+        "السيارة", "سياره", "لعبة السيارة", "لعبه السياره", "لعبة سيارات", "لعبه سيارات",
+        "سباق السيارات", "hill climb", "hill climb racing", "car game", "racing game"
     )
     private val searchVerbs = setOf("ابحث", "بحث", "دور", "فتش", "ابحت", "ابحتث")
     private val writeVerbs = setOf("اكتب", "يكتب", "كتابه", "اكتبي")
@@ -53,6 +62,16 @@ class RuleBasedArabicBrain : LocalBrain {
         if (n in setOf("الشاشه الرئيسيه", "ارجع للرئيسيه", "افتح الرئيسيه")) return LocalAction.Home
         if (n in setOf("اقرا الشاشه", "ما في الشاشه", "ايش في الشاشه", "ماذا علي الشاشه")) return LocalAction.ReadScreen
         if (listOf("التطبيقات المثبته", "التطبيقات الموجوده", "التطبيقات عندي", "ايش التطبيقات", "قائمه التطبيقات", "ما هي التطبيقات").any { n.contains(it) }) return LocalAction.ListApps
+
+        // «ادخل تطبيق X» داخل مدير الملفات يعني فتح العنصر الظاهر، وليس تشغيل X
+        // من قائمة التطبيقات المثبتة.
+        val enterItem = Regex("^(?:ادخل|دخل|اذهب الى|اذهب ل)\\s+(?:تطبيق|التطبيق)\\s+(.+)$").find(n)
+            ?.groupValues?.getOrNull(1)?.trim(' ', '،', ',', '.', '؟', '?')
+        if (!enterItem.isNullOrBlank()) return LocalAction.Click(enterItem)
+
+        val storage = Regex("^(?:و)?(?:ادخل|دخل|اذهب الى|اذهب ل|افتح)\\s+(قرص الذاكره|قرص الذاكرة|بطاقه الذاكره|بطاقة الذاكرة|الذاكره الداخليه|الذاكرة الداخلية|internal storage|sd card|storage)$")
+            .find(n)?.groupValues?.getOrNull(1)
+        if (!storage.isNullOrBlank()) return LocalAction.OpenFolder(storage)
 
         val folder = Regex("و?(?:ادخل|دخل|اذهب الى|اذهب ل|افتح)\\s+(?:مجلد|المجلد)\\s+(.+)$").find(n)
             ?.groupValues?.getOrNull(1)?.trim(' ', '،', ',', '.', '؟', '?')
@@ -71,16 +90,28 @@ class RuleBasedArabicBrain : LocalBrain {
         if (searchIndex >= 0 && (writeIndex < 0 || searchIndex < writeIndex)) {
             val query = extractPayload(tokens, keys, searchIndex, true)
             if (query.isBlank()) return LocalAction.Unknown(original)
+            // صيغة «دور تطبيق تلجرام» لا تحدد تطبيقًا خارجيًا؛ ابحث في الشاشة الحالية.
+            if (keys.getOrNull(searchIndex + 1) in setOf("تطبيق", "التطبيق", "ملف", "الملف", "مجلد", "المجلد")) {
+                return LocalAction.SearchCurrent(query)
+            }
             when (app) {
                 "يوتيوب" -> return LocalAction.SearchYoutube(removeSongPrefix(query), play)
                 "كروم" -> {
                     val images = Regex("(?:^| )صور(?:ه| )").containsMatchIn(ArabicText.normalize(query)) || keys.any { it == "صور" || it == "صوره" }
                     val download = keys.any { verb(it) in setOf("حمل", "نزل", "تحميل", "تنزيل") }
                     val cleaned = query.replace(Regex("^(?:صور|صورة|صوره)\\s+"), "")
-                    return LocalAction.SearchChrome(cleaned, images, download && images)
+                    val count = if (download && images) extractDownloadCount(keys, searchIndex) else 0
+                    return LocalAction.SearchChrome(cleaned, images, download && images, count)
                 }
                 "ام اكس" -> return LocalAction.OpenAppAndSearch(app, removeSongPrefix(query), play)
                 null -> {
+                    val images = keys.any { it == "صور" || it == "صوره" || it == "صور" }
+                    val download = keys.any { verb(it) in setOf("حمل", "نزل", "تحميل", "تنزيل") }
+                    if (images) {
+                        val cleaned = query.replace(Regex("^(?:صور|صورة|صوره)\\s+"), "")
+                        val count = if (download) extractDownloadCount(keys, searchIndex) else 0
+                        return LocalAction.SearchChrome(cleaned, true, download, count)
+                    }
                     val target = searchTarget(tokens, keys, searchIndex)
                     if (target != null && ArabicText.normalize(target) !in setOf("جوجل", "google", "الويب", "الانترنت")) {
                         return LocalAction.OpenAppAndSearch(target, query, play)
@@ -138,6 +169,7 @@ class RuleBasedArabicBrain : LocalBrain {
             found.contains("ساعه") || found == "clock" -> "الساعة"
             found.contains("مسجل") || found.contains("recorder") -> "مسجل الصوت"
             found.contains("راديو") || found.contains("radio") -> "الراديو"
+            found.contains("سيار") || found.contains("سباق") || found.contains("hill") || found.contains("racing") || found.contains("car") -> "السيارة"
             else -> "الصور"
         }
     }
@@ -149,9 +181,24 @@ class RuleBasedArabicBrain : LocalBrain {
 
     private fun extractPayload(tokens: List<String>, keys: List<String>, index: Int, search: Boolean): String {
         var start = index + 1
-        val about = (start until keys.size).firstOrNull { keys[it] == "عن" }
-        if (about != null && search) start = about + 1
-        else {
+        if (search) {
+            val about = (start until keys.size).firstOrNull { keys[it] == "عن" }
+            val explicitRoute = keys.getOrNull(start) in setOf("في", "داخل", "بداخل", "ضمن")
+            when {
+                explicitRoute -> {
+                    start++
+                    while (start < keys.size && keys[start] !in setOf("عن", "حول")) start++
+                    if (keys.getOrNull(start) in setOf("عن", "حول")) start++
+                }
+                keys.getOrNull(start) == "عن" -> start++
+                about != null && about > start -> {
+                    // «ابحث يوتيوب عن ...»؛ احذف اسم التطبيق الواقع قبل «عن».
+                    val prefix = keys.subList(start, about)
+                    if (prefix.any { token -> appWords.any { app -> ArabicText.normalize(app) == token } }) start = about + 1
+                }
+                keys.getOrNull(start) in setOf("تطبيق", "التطبيق") -> start++
+            }
+        } else {
             // احذف مقدمة الأمر فقط؛ لا تحذف الكلمات المماثلة من عنوان البحث.
             val routeWords = appWords.flatMap { it.split(' ') }.toSet() + setOf("في", "لي", "تطبيق", "التطبيق", "جوجل", "google", "الويب", "الانترنت")
             while (start < keys.size && keys[start] in routeWords) start++
@@ -175,6 +222,24 @@ class RuleBasedArabicBrain : LocalBrain {
     }
 
     private fun removeSongPrefix(query: String): String = query.replace(Regex("^(?:أغنية|اغنية|اغنيه|أغنيه)\\s+"), "")
+
+    private fun extractDownloadCount(keys: List<String>, searchIndex: Int): Int {
+        val downloadIndex = (searchIndex until keys.size).firstOrNull { verb(keys[it]) in setOf("حمل", "نزل", "تحميل", "تنزيل") }
+            ?: return 1
+        val next = keys.getOrNull(downloadIndex + 1) ?: return 1
+        return when (next) {
+            "واحد", "واحده", "صوره", "صوره واحده", "1" -> 1
+            "اثنان", "اثنين", "ثنتين", "2" -> 2
+            "ثلاث", "ثلاثه", "ثلاثة", "3" -> 3
+            "اربع", "اربعه", "أربع", "أربعة", "4" -> 4
+            "خمس", "خمسه", "خمسة", "5" -> 5
+            "ست", "سته", "ستة", "6" -> 6
+            "سبع", "سبعه", "سبعة", "7" -> 7
+            "ثمان", "ثمانيه", "ثمانية", "8" -> 8
+            "تسع", "تسعه", "تسعة", "9" -> 9
+            else -> next.toIntOrNull()?.coerceIn(1, 9) ?: 1
+        }
+    }
 
     private fun extractExpression(n: String): String? {
         val numbers = n.replace("زائد", "+").replace("ناقص", "-").replace("ضرب", "*").replace("تقسيم", "/")
