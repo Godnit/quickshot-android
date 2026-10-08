@@ -27,9 +27,12 @@ class NaffithAccessibilityService : AccessibilityService() {
         val playFirst: Boolean = false,
         val submit: Boolean = false,
         val downloadCount: Int = 1,
-        var downloaded: Int = 0
+        var downloaded: Int = 0,
+        var route: List<UiTransition> = emptyList(),
+        var routeIndex: Int = 0
     )
     private val handler = Handler(Looper.getMainLooper())
+    private lateinit var learningStore: AppLearningStore
     private var job: Job? = null
     private var stage = 0
     private var keyIndex = 0
@@ -51,10 +54,12 @@ class NaffithAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        learningStore = AppLearningStore(this)
         serviceInfo = serviceInfo.apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED or
-                AccessibilityEvent.TYPE_WINDOWS_CHANGED
+                AccessibilityEvent.TYPE_VIEW_CLICKED or AccessibilityEvent.TYPE_VIEW_SCROLLED or
+                AccessibilityEvent.TYPE_VIEW_SELECTED or AccessibilityEvent.TYPE_WINDOWS_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = flags or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
                 AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
@@ -63,11 +68,25 @@ class NaffithAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // لقطة نصية محلية فقط لآخر تطبيق غير نفّذ؛ لا تحفظ الشاشة أو ترسلها لخادم.
-        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || job != null) {
+        if (event != null) {
             val root = rootInActiveWindow ?: return
             if (root.packageName?.toString() != packageName) {
                 val nodes = flatten(root)
+                val screenPackage = root.packageName?.toString().orEmpty()
+                val via = if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+                    event.source?.let { source ->
+                        val selector = UiSemantics.selector(uiElement(source, -1))
+                        source.recycle()
+                        selector
+                    }
+                } else null
                 latestScreenText = nodes.map(::nodeText).filter { it.isNotBlank() }.distinct().joinToString("\n").take(6000)
+                val appLabel = try {
+                    packageManager.getApplicationInfo(screenPackage, 0).loadLabel(packageManager).toString()
+                } catch (_: Exception) { screenPackage }
+                // تعلّم محليًا أسماء العناصر وأدوارها حتى تعمل الأوامر العامة
+                // داخل التطبيقات التي لم تكن معروفة وقت بناء APK.
+                learningStore.observe(screenPackage, appLabel, nodes, via)
                 latestScreenPackage = root.packageName?.toString().orEmpty()
                 recycle(nodes)
             } else root.recycle()
@@ -92,6 +111,7 @@ class NaffithAccessibilityService : AccessibilityService() {
         beforePlay = ""
         imageRect = null
         downloadedImageKeys.clear()
+        currentRouteReset(request)
         val now = SystemClock.uptimeMillis()
         // طلب «ابحث وشغّل» يرسل ACTION_SEARCH من MainActivity أولًا؛ إعطاء
         // يوتيوب مهلة لعرض صفحة النتائج يمنع خدمة التشغيل من النقر على أول
@@ -99,6 +119,11 @@ class NaffithAccessibilityService : AccessibilityService() {
         nextAt = now + if (request.kind == Kind.PLAY) 1400L else 220L
         deadline = now + 30000L
         handler.postDelayed(tick, 100L)
+    }
+
+    private fun currentRouteReset(request: Job) {
+        request.route = emptyList()
+        request.routeIndex = 0
     }
 
     private fun runStep() {
@@ -121,7 +146,9 @@ class NaffithAccessibilityService : AccessibilityService() {
                 Kind.OPEN_FILES, Kind.OPEN_FOLDER -> fileManagerStep(current, nodes)
                 Kind.CLICK -> {
                     val label = current.text
-                    val node = nodes.firstOrNull { it.isVisibleToUser && !it.isEditable &&
+                    val semantic = UiSemantics.choose(uiElements(nodes), label)
+                    val node = semantic?.let { nodes.getOrNull(it.actionIndex) }
+                        ?: nodes.firstOrNull { it.isVisibleToUser && !it.isEditable &&
                         (AutomationRules.clickCandidate(nodeText(it), id(it), label) ||
                             (ArabicText.normalize(label) in setOf("انتر", "enter", "بحث", "تم") && AutomationRules.submitButton(nodeText(it), id(it)))) && clickable(it) }
                     if (node != null && click(node)) finish("ضغطت «${current.text}».")
@@ -152,7 +179,9 @@ class NaffithAccessibilityService : AccessibilityService() {
 
     private fun searchStep(current: Job, nodes: List<AccessibilityNodeInfo>) {
         val editable = nodes.filter { it.isVisibleToUser && it.isEditable && !it.isPassword }
-        val input = nodes.firstOrNull { it.isVisibleToUser && it.isEditable && !it.isPassword && it.isFocused }
+        val semanticInput = UiSemantics.input(uiElements(nodes), current.kind == Kind.SEARCH)
+        val input = semanticInput?.let { nodes.getOrNull(it.index) }
+            ?: nodes.firstOrNull { it.isVisibleToUser && it.isEditable && !it.isPassword && it.isFocused }
             ?: nodes.firstOrNull { it.isVisibleToUser && it.isEditable && !it.isPassword && id(it).contains("search") }
             ?: if (current.kind == Kind.WRITE) {
                 editable.firstOrNull {
@@ -279,7 +308,11 @@ class NaffithAccessibilityService : AccessibilityService() {
     }
 
     private fun navigateStep(current: Job, nodes: List<AccessibilityNodeInfo>) {
-        val candidate = nodes.asSequence()
+        val elements = uiElements(nodes)
+        val semanticCandidate = UiSemantics.choose(elements, current.text)
+            ?.takeIf { UiSemantics.isNavigation(it) }
+            ?.let { nodes.getOrNull(it.actionIndex) }
+        val candidate = semanticCandidate ?: nodes.asSequence()
             .filter { it.isVisibleToUser && !it.isEditable && clickable(it) }
             .filter { AutomationRules.navigationCandidate(nodeText(it), id(it), current.text) }
             .sortedBy { bounds(it).top }
@@ -288,6 +321,21 @@ class NaffithAccessibilityService : AccessibilityService() {
             finish("فتحت قسم «${current.text}».")
         } else {
             attempts++
+            if (current.route.isEmpty() && current.routeIndex == 0) {
+                current.route = learningStore.route(current.packageName, UiSemantics.screenKey(elements), current.text)
+            }
+            val edge = current.route.getOrNull(current.routeIndex)
+            if (edge != null) {
+                val routeNode = elements.mapIndexedNotNull { index, element ->
+                    if (UiSemantics.matches(UiSemantics.selector(element), edge.via.semantic, false) ||
+                        (edge.via.viewId.isNotBlank() && element.viewId == edge.via.viewId)) nodes.getOrNull(index) else null
+                }.firstOrNull { it.isVisibleToUser && clickable(it) }
+                if (routeNode != null && click(routeNode)) {
+                    current.routeIndex++
+                    waitFor(0, 650L)
+                    return
+                }
+            }
             val hasPause = nodes.any { ArabicText.normalize(nodeText(it)) in setOf("pause", "pause video", "ايقاف مؤقت", "ايقاف التشغيل مؤقتا") }
             val looksLikeResults = nodes.any {
                 val value = ArabicText.normalize(nodeText(it))
@@ -429,6 +477,28 @@ class NaffithAccessibilityService : AccessibilityService() {
     private fun id(node: AccessibilityNodeInfo) = node.viewIdResourceName.orEmpty().lowercase()
     private fun nodeText(node: AccessibilityNodeInfo): String = listOfNotNull(node.text?.toString(), node.contentDescription?.toString()).filter { it.isNotBlank() }.distinct().joinToString(" ")
     private fun bounds(node: AccessibilityNodeInfo) = Rect().also { node.getBoundsInScreen(it) }
+    private fun uiElement(node: AccessibilityNodeInfo, index: Int): UiElement {
+        val rect = bounds(node)
+        return UiElement(
+            index = index,
+            actionIndex = index,
+            label = nodeText(node),
+            hint = node.hintText?.toString().orEmpty(),
+            viewId = id(node),
+            editable = node.isEditable,
+            password = node.isPassword,
+            clickable = clickable(node),
+            scrollable = node.isScrollable,
+            focused = node.isFocused,
+            selected = node.isSelected,
+            enabled = node.isEnabled,
+            left = rect.left,
+            top = rect.top,
+            right = rect.right,
+            bottom = rect.bottom
+        )
+    }
+    private fun uiElements(nodes: List<AccessibilityNodeInfo>): List<UiElement> = nodes.mapIndexed(::uiElement)
     private fun clickable(node: AccessibilityNodeInfo): Boolean {
         if (node.isClickable) return true
         var parent = node.parent
@@ -533,6 +603,8 @@ class NaffithAccessibilityService : AccessibilityService() {
         }
         private fun request(job: Job): Boolean { val service = instance ?: return false; service.begin(job); return true }
         fun isBusy(): Boolean = instance?.job != null
+        fun learnedAppDescription(packageName: String): String? = instance?.learningStore?.describe(packageName)
+        fun learnedControls(packageName: String): List<LearnedControl> = instance?.learningStore?.controls(packageName).orEmpty()
         fun requestSearch(packageName: String, query: String, playFirst: Boolean = false) = request(Job(packageName, Kind.SEARCH, query, playFirst))
         fun requestWrite(packageName: String, text: String, submit: Boolean) = request(Job(packageName, Kind.WRITE, text, submit = submit))
         fun requestCalculator(packageName: String, expression: String) = request(Job(packageName, Kind.CALCULATE, expression))
