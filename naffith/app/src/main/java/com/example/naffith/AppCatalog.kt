@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 
 data class InstalledApp(val packageName: String, val label: String, val intent: Intent)
@@ -60,6 +61,15 @@ class AppCatalog(private val context: Context) {
     fun findPackage(packageName: String): InstalledApp? =
         all().firstOrNull { it.packageName == packageName }
 
+    private fun fileRootIntent(intent: Intent): Intent = Intent(intent).apply {
+        // تتجاهله تطبيقات الملفات التي لا تدعم DocumentsContract، بينما تمنع
+        // DocumentsUI من استعادة آخر موقع (التنزيلات) عند توفر الدعم.
+        putExtra(
+            DocumentsContract.EXTRA_INITIAL_URI,
+            DocumentsContract.buildRootUri("com.android.externalstorage.documents", "primary")
+        )
+    }
+
     /**
      * يختار تطبيق إدارة الملفات الحقيقي.  ACTION_OPEN_DOCUMENT هو منتقي ملفات
      * يبدأ غالبًا من Downloads، لذلك لا نستخدمه كاختيار أول للأمر «افتح الملفات».
@@ -89,14 +99,15 @@ class AppCatalog(private val context: Context) {
             // إذا كان للتطبيق اختصار تشغيل عادي فله أولوية؛ بعض نسخ DocumentsUI
             // تستقبل CATEGORY_APP_FILES لكنها تعيد فتح آخر مجلد (غالبًا التنزيلات).
             val launcher = pm.getLaunchIntentForPackage(handler.packageName)
-            return if (launcher != null) handler.copy(intent = launcher) else handler
+            return if (launcher != null) handler.copy(intent = fileRootIntent(launcher))
+            else handler.copy(intent = fileRootIntent(handler.intent))
         }
 
         // بعض واجهات الشركات لا تعلن CATEGORY_APP_FILES لكنها تملك اختصار تشغيل.
         for (pkg in fileManagerPackages) {
             val launch = pm.getLaunchIntentForPackage(pkg) ?: continue
             val info = try { pm.getApplicationInfo(pkg, 0) } catch (_: PackageManager.NameNotFoundException) { continue }
-            if (info.enabled) return InstalledApp(pkg, info.loadLabel(pm).toString().trim(), launch)
+            if (info.enabled) return InstalledApp(pkg, info.loadLabel(pm).toString().trim(), fileRootIntent(launch))
         }
 
         return all().firstOrNull { app ->

@@ -79,4 +79,30 @@ object AutomationRules {
             else -> false
         }
     }
+
+    fun navigationCandidate(text: String, id: String, section: String): Boolean {
+        val value = ArabicText.normalize(text)
+        val name = id.lowercase()
+        val aliases = when (section) {
+            "subscriptions" -> setOf("الاشتراكات", "اشتراكات", "subscribe", "subscriptions")
+            "shorts" -> setOf("الشورت", "الشورتس", "الشورتات", "شورتس", "shorts", "short")
+            "account" -> setOf("الحساب", "حسابي", "الملف الشخصي", "account", "profile", "you")
+            "music" -> setOf("الموسيقى", "موسيقى", "music", "audio", "songs", "اغاني")
+            "videos" -> setOf("الفيديوهات", "الفيديو", "videos", "video", "movies")
+            "home" -> setOf("الرئيسيه", "الصفحه الرئيسيه", "home", "الرئيسية")
+            "like" -> setOf("اعجاب", "اعجبني", "لايك", "like")
+            else -> setOf(section)
+        }.map(ArabicText::normalize)
+        if (aliases.any { value == it || value.contains(it) }) return true
+        return when (section) {
+            "subscriptions" -> name.contains("subscription") || name.contains("subscribe")
+            "shorts" -> name.contains("short")
+            "account" -> name.contains("account") || name.contains("profile") || name.contains("avatar")
+            "music" -> name.contains("music") || name.contains("audio") || name.contains("song")
+            "videos" -> name.contains("video") || name.contains("movie")
+            "home" -> name.contains("home") || name.contains("navigation")
+            "like" -> name.contains("like")
+            else -> false
+        }
+    }
 }

@@ -81,6 +81,8 @@ class MainActivity : Activity() {
             is LocalAction.SearchChrome -> searchChrome(action.query, action.images, action.downloadImage, action.downloadCount)
             is LocalAction.SearchWeb -> searchCurrentOrWeb(action.query, false)
             is LocalAction.SearchCurrent -> searchCurrentApp(action.query, action.playFirst)
+            is LocalAction.Navigate -> navigateSection(action.section)
+            is LocalAction.OpenAppAndNavigate -> openInstalledAppAndNavigate(action.appQuery, action.section)
             is LocalAction.Write -> writeText(action)
             is LocalAction.Click -> clickLabel(action.label)
             is LocalAction.OpenFolder -> openFolder(action.folder)
@@ -137,18 +139,33 @@ class MainActivity : Activity() {
     private fun splitCommands(text: String): List<String> {
         val tokens = text.replace('؛', '|').split(Regex("\\s+|\\|" )).filter { it.isNotBlank() }
         if (tokens.isEmpty()) return emptyList()
-        val starts = setOf("افتح", "شغل", "ابحث", "اكتب", "اضغط", "احسب", "ادخل", "دخل", "اذهب", "اقرا", "اقرأ", "ارجع", "توقف")
+        val starts = setOf(
+            "افتح", "يفتح", "شغل", "يشغل", "ابحث", "يبحث", "اكتب", "يكتب", "اضغط",
+            "احسب", "يحسب", "ادخل", "يدخل", "دخل", "اذهب", "انتقل", "اقرا", "اقرأ", "ارجع", "توقف"
+        )
+        val separators = setOf("و", "ثم", "بعدها", "وبعدها", "بعدين")
         val parts = mutableListOf<String>()
         val current = mutableListOf<String>()
-        for (token in tokens) {
+        for (index in tokens.indices) {
+            val token = tokens[index]
             val normalized = ArabicText.normalize(token.trim('،', ',', '.', '؟', '?', '!'))
             val bare = normalized.removePrefix("و")
-            val previous = current.lastOrNull()?.let { ArabicText.normalize(it) }
+            val next = tokens.getOrNull(index + 1)?.let {
+                ArabicText.normalize(it.trim('،', ',', '.', '؟', '?', '!'))
+            }.orEmpty()
+            val nextBare = next.removePrefix("و")
+            if (normalized in separators && (next in starts || nextBare in starts)) {
+                if (current.isNotEmpty()) parts += current.joinToString(" ")
+                current.clear()
+                continue
+            }
             val startsNew = current.isNotEmpty() && (
                 normalized in starts ||
-                    bare in starts && normalized.startsWith("و")
+                    bare in starts && normalized.startsWith("و") ||
+                    normalized.startsWith("و") && bare in starts
                 )
             if (startsNew) {
+                if (current.lastOrNull()?.let { ArabicText.normalize(it) } in separators) current.removeLast()
                 parts += current.joinToString(" ")
                 current.clear()
             }
@@ -186,6 +203,16 @@ class MainActivity : Activity() {
             if (playFirst) "نفّذ: فتحت ${app.label}، وسأبحث عن «$searchQuery» ثم أحاول تشغيل أول نتيجة."
             else "نفّذ: فتحت ${app.label} وسأكتب «$searchQuery» ثم أرسل البحث."
         } else "نفّذ: فتحت ${app.label}. فعّل إمكانية الوصول لكي أنفذ البحث داخل التطبيق.")
+    }
+
+    private fun openInstalledAppAndNavigate(appQuery: String, section: String) {
+        val app = catalog.find(appQuery)
+        if (app == null) { appendLog("نفّذ: لم أجد تطبيق «$appQuery»."); return }
+        contextPackage = app.packageName
+        val queued = NaffithAccessibilityService.requestNavigate(app.packageName, section)
+        if (!launchExternal(app.intent)) { appendLog("نفّذ: لا أستطيع تشغيل ${app.label}."); return }
+        appendLog(if (queued) "نفّذ: فتحت ${app.label} وسأدخل قسم «${sectionLabel(section)}»."
+        else "نفّذ: فتحت ${app.label}. فعّل إمكانية الوصول لدخول القسم المطلوب.")
     }
 
     private fun openInstalledAppAndCalculate(appQuery: String, expression: String) {
@@ -260,6 +287,37 @@ class MainActivity : Activity() {
         appendLog(if (queued) "نفّذ: سأبحث عن «$query» داخل التطبيق المفتوح." else "نفّذ: فعّل إمكانية الوصول للبحث داخل التطبيق المفتوح.")
     }
 
+    private fun navigateSection(section: String) {
+        var targetPackage = contextPackage.ifBlank { NaffithAccessibilityService.latestScreenPackage }
+        if (targetPackage == packageName) targetPackage = ""
+        if (targetPackage.isBlank()) {
+            val appQuery = if (section in setOf("music", "videos")) "ام اكس" else "يوتيوب"
+            targetPackage = catalog.find(appQuery)?.packageName.orEmpty()
+        }
+        if (targetPackage.isBlank()) {
+            appendLog("نفّذ: افتح يوتيوب أو مشغل أم أكس أولًا، ثم اطلب القسم المطلوب.")
+            return
+        }
+        contextPackage = targetPackage
+        val queued = NaffithAccessibilityService.requestNavigate(targetPackage, section)
+        if (NaffithAccessibilityService.latestScreenPackage != targetPackage) {
+            catalog.findPackage(targetPackage)?.let { launchExternal(it.intent) }
+        }
+        appendLog(if (queued) "نفّذ: سأفتح قسم «${sectionLabel(section)}»."
+        else "نفّذ: فعّل إمكانية الوصول للتنقل داخل التطبيق.")
+    }
+
+    private fun sectionLabel(section: String): String = when (section) {
+        "subscriptions" -> "الاشتراكات"
+        "shorts" -> "الشورت"
+        "account" -> "الحساب"
+        "music" -> "الموسيقى"
+        "videos" -> "الفيديوهات"
+        "home" -> "الرئيسية"
+        "like" -> "الإعجاب"
+        else -> section
+    }
+
     private fun writeText(action: LocalAction.Write) {
         val packageName = action.appQuery?.let { catalog.find(it)?.packageName }
             ?: contextPackage.ifBlank { NaffithAccessibilityService.latestScreenPackage }
@@ -273,7 +331,15 @@ class MainActivity : Activity() {
 
     private fun clickLabel(label: String) {
         val packageName = contextPackage.ifBlank { NaffithAccessibilityService.latestScreenPackage }
-        val queued = if (packageName.isBlank()) false else NaffithAccessibilityService.requestClick(packageName, label)
+        if (packageName.isBlank()) {
+            appendLog("نفّذ: لا توجد شاشة مستهدفة. افتح التطبيق أولًا.")
+            return
+        }
+        contextPackage = packageName
+        val queued = NaffithAccessibilityService.requestClick(packageName, label)
+        if (NaffithAccessibilityService.latestScreenPackage != packageName) {
+            catalog.findPackage(packageName)?.let { launchExternal(it.intent) }
+        }
         appendLog(if (queued) "نفّذ: سأضغط «$label»." else "نفّذ: لا توجد شاشة مستهدفة. افتح التطبيق أولًا.")
     }
 

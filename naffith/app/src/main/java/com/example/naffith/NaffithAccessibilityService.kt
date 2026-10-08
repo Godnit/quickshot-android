@@ -19,7 +19,7 @@ import android.view.accessibility.AccessibilityWindowInfo
 
 /** خطة قصيرة ومحددة بطلب المستخدم، مع انتظار الشاشة وتوقف عند غياب العناصر. */
 class NaffithAccessibilityService : AccessibilityService() {
-    private enum class Kind { SEARCH, WRITE, CALCULATE, PLAY, DOWNLOAD_IMAGE, CLICK, OPEN_FILES, OPEN_FOLDER }
+    private enum class Kind { SEARCH, WRITE, CALCULATE, PLAY, DOWNLOAD_IMAGE, CLICK, NAVIGATE, OPEN_FILES, OPEN_FOLDER }
     private data class Job(
         val packageName: String,
         val kind: Kind,
@@ -114,6 +114,7 @@ class NaffithAccessibilityService : AccessibilityService() {
                 Kind.CALCULATE -> calculatorStep(current, nodes)
                 Kind.PLAY -> playStep(current, nodes)
                 Kind.DOWNLOAD_IMAGE -> imageStep(current, nodes)
+                Kind.NAVIGATE -> navigateStep(current, nodes)
                 Kind.OPEN_FILES, Kind.OPEN_FOLDER -> fileManagerStep(current, nodes)
                 Kind.CLICK -> {
                     val label = current.text
@@ -131,7 +132,6 @@ class NaffithAccessibilityService : AccessibilityService() {
         if (active?.packageName?.toString() == target) return active
         active?.recycle()
         for (window in windows) {
-            if (window.type != AccessibilityWindowInfo.TYPE_APPLICATION || (!window.isActive && !window.isFocused)) continue
             val root = window.root ?: continue
             if (root.packageName?.toString() == target) return root
             root.recycle()
@@ -247,6 +247,19 @@ class NaffithAccessibilityService : AccessibilityService() {
         else if (screenSignature(nodes) != beforePlay) finish("ضغطت نتيجة «${current.text}». إذا توقفت عند إعلان أو شاشة اختيار، أكملها يدويًا.")
     }
 
+    private fun navigateStep(current: Job, nodes: List<AccessibilityNodeInfo>) {
+        val candidate = nodes.asSequence()
+            .filter { it.isVisibleToUser && !it.isEditable && clickable(it) }
+            .filter { AutomationRules.navigationCandidate(nodeText(it), id(it), current.text) }
+            .sortedBy { bounds(it).top }
+            .firstOrNull()
+        if (candidate != null && click(candidate)) {
+            finish("فتحت قسم «${current.text}».")
+        } else if (++attempts > 35) {
+            finish("لم أجد زر قسم «${current.text}» في التطبيق الحالي.")
+        }
+    }
+
     private fun imageStep(current: Job, nodes: List<AccessibilityNodeInfo>) {
         when (stage) {
             0 -> {
@@ -316,6 +329,8 @@ class NaffithAccessibilityService : AccessibilityService() {
                         id(it).contains("roots") || ArabicText.normalize(nodeText(it)) in
                         setOf("القائمه", "القائمة", "menu", "مواقع", "locations")) }
                 if (menu != null && click(menu)) waitFor(1, 450L)
+                else if (attempts == 3 && tapFileManagerMenu(right = true)) waitFor(1, 650L)
+                else if (attempts == 10 && tapFileManagerMenu(right = false)) waitFor(1, 650L)
                 else if (++attempts > 30) finish("فتحت إدارة الملفات، لكن لم أستطع مغادرة مجلد التنزيلات.")
             }
             1 -> {
@@ -323,6 +338,10 @@ class NaffithAccessibilityService : AccessibilityService() {
                     (AutomationRules.clickCandidate(nodeText(it), id(it), "التخزين الداخلي") ||
                         ArabicText.normalize(nodeText(it)) in setOf("الرئيسيه", "الرئيسية", "home", "جهاز", "device")) }
                 if (storage != null && click(storage)) waitFor(2, 500L)
+                else if (attempts == 10 && tapFileManagerMenu(right = false)) {
+                    attempts = 0
+                    waitFor(1, 650L)
+                }
                 else if (++attempts > 30) finish("فتحت مدير الملفات، لكن لم أجد الذاكرة الداخلية.")
             }
             2 -> {
@@ -394,6 +413,18 @@ class NaffithAccessibilityService : AccessibilityService() {
         return dispatchGesture(gesture, null, handler)
     }
 
+    private fun tapFileManagerMenu(right: Boolean): Boolean {
+        val density = resources.displayMetrics.density
+        val width = resources.displayMetrics.widthPixels.toFloat()
+        val x = if (right) width - 28f * density else 28f * density
+        val y = 54f * density
+        val path = Path().apply { moveTo(x, y) }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0L, 60L))
+            .build()
+        return dispatchGesture(gesture, null, handler)
+    }
+
     private fun flatten(root: AccessibilityNodeInfo): List<AccessibilityNodeInfo> {
         val result = ArrayList<AccessibilityNodeInfo>()
         fun walk(node: AccessibilityNodeInfo, depth: Int) {
@@ -429,6 +460,7 @@ class NaffithAccessibilityService : AccessibilityService() {
         fun requestWrite(packageName: String, text: String, submit: Boolean) = request(Job(packageName, Kind.WRITE, text, submit = submit))
         fun requestCalculator(packageName: String, expression: String) = request(Job(packageName, Kind.CALCULATE, expression))
         fun requestPlayFirst(packageName: String, query: String) = request(Job(packageName, Kind.PLAY, query))
+        fun requestNavigate(packageName: String, section: String) = request(Job(packageName, Kind.NAVIGATE, section))
         fun requestImageDownload(packageName: String, query: String, count: Int = 1) =
             request(Job(packageName, Kind.DOWNLOAD_IMAGE, query, downloadCount = count.coerceIn(1, 9)))
         fun requestClick(packageName: String, label: String) = request(Job(packageName, Kind.CLICK, label))

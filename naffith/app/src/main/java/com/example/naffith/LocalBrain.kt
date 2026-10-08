@@ -16,6 +16,8 @@ sealed class LocalAction {
     data class SearchWeb(val query: String) : LocalAction()
     /** بحث في التطبيق الظاهر حاليًا، ويُستخدم خصوصًا لمدير الملفات. */
     data class SearchCurrent(val query: String, val playFirst: Boolean = false) : LocalAction()
+    data class Navigate(val section: String) : LocalAction()
+    data class OpenAppAndNavigate(val appQuery: String, val section: String) : LocalAction()
     data class Write(val appQuery: String?, val text: String, val submit: Boolean) : LocalAction()
     data class Click(val label: String) : LocalAction()
     data class OpenFolder(val folder: String) : LocalAction()
@@ -84,6 +86,11 @@ class RuleBasedArabicBrain : LocalBrain {
             if (n.any { it.isDigit() }) return LocalAction.Unknown(original)
         }
         val app = knownApp(n)
+        val navigation = navigationTarget(n)
+        if (navigation != null) {
+            return if (app != null) LocalAction.OpenAppAndNavigate(app, navigation)
+            else LocalAction.Navigate(navigation)
+        }
         val searchIndex = keys.indexOfFirst { verb(it) in searchVerbs }
         val writeIndex = keys.indexOfFirst { verb(it) in writeVerbs }
         val play = keys.any { verb(it) in setOf("شغلها", "شغله", "شغل", "تشغيل") }
@@ -139,7 +146,7 @@ class RuleBasedArabicBrain : LocalBrain {
         if (app == "الملفات") return LocalAction.OpenFiles
         if (listOf("الاعدادات", "الضبط", "settings").any { n.contains(it) }) return LocalAction.OpenSettings
         if (app != null) return LocalAction.OpenApp(app)
-        if (keys.firstOrNull()?.let { verb(it) } in setOf("افتح", "فتح", "شغل", "ابدأ", "ابدا")) {
+        if (keys.firstOrNull()?.let { verb(it) } in setOf("افتح", "يفتح", "فتح", "شغل", "يشغل", "ابدأ", "ابدا", "ادخل", "يدخل")) {
             val query = tokens.drop(1).dropWhile { ArabicText.normalize(it) in setOf("لي", "تطبيق", "التطبيق") }.joinToString(" ")
             if (query.isNotBlank()) return LocalAction.OpenApp(query)
         }
@@ -174,6 +181,24 @@ class RuleBasedArabicBrain : LocalBrain {
             found.contains("سيار") || found.contains("سباق") || found.contains("hill") || found.contains("racing") || found.contains("car") -> "السيارة"
             else -> "الصور"
         }
+    }
+
+    private fun navigationTarget(n: String): String? {
+        val checks = listOf(
+            "subscriptions" to listOf("الاشتراكات", "اشتراكات", "subscription", "subscriptions"),
+            "shorts" to listOf("الشورت", "الشورتس", "الشورتات", "شورتس", "shorts", "short"),
+            "account" to listOf("الحساب", "حسابي", "الملف الشخصي", "account", "profile", "you"),
+            "music" to listOf("قسم الموسيقى", "الموسيقى", "موسيقى", "music", "audio", "songs", "اغاني"),
+            "videos" to listOf("قسم الفيديو", "الفيديوهات", "الفيديو", "videos", "video", "movies"),
+            "home" to listOf("الرئيسية", "الصفحة الرئيسية", "home"),
+            "like" to listOf("لايك", "اعجاب", "اعجبني", "ضع اعجاب", "like")
+        )
+        val explicit = listOf("ادخل", "دخل", "اذهب", "انتقل", "افتح قسم", "في قسم", "روح", "شغل", "اعمل لايك", "اضغط")
+            .any { n.contains(ArabicText.normalize(it)) }
+        return checks.firstOrNull { (_, aliases) ->
+            aliases.any { alias -> n == ArabicText.normalize(alias) ||
+                (explicit && n.contains(ArabicText.normalize(alias))) }
+        }?.first
     }
 
     private fun verb(key: String): String {
