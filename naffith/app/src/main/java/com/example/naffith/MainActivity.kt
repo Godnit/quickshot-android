@@ -27,8 +27,6 @@ class MainActivity : Activity() {
     private var planRunning = false
     /** آخر تطبيق طلب المستخدم فتحه؛ يبقى سياقًا للأمر المختصر «ابحث عن…». */
     private var contextPackage = ""
-    private var waitingForPackage = ""
-    private var waitingSince = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,7 +94,6 @@ class MainActivity : Activity() {
                 NaffithAccessibilityService.stop()
                 pendingCommands.clear()
                 planRunning = false
-                waitingForPackage = ""
                 appendLog("نفّذ: أوقفت الخطة الحالية.")
             }
             LocalAction.Help -> showHelp()
@@ -111,14 +108,6 @@ class MainActivity : Activity() {
             planHandler.postDelayed({ runNextPlannedCommand() }, 180L)
             return
         }
-        if (waitingForPackage.isNotBlank()) {
-            val elapsed = android.os.SystemClock.uptimeMillis() - waitingSince
-            if (NaffithAccessibilityService.latestScreenPackage != waitingForPackage && elapsed < 4500L) {
-                planHandler.postDelayed({ runNextPlannedCommand() }, 120L)
-                return
-            }
-            waitingForPackage = ""
-        }
         if (pendingCommands.isEmpty()) {
             planRunning = false
             appendLog("نفّذ: اكتملت الخطة.")
@@ -126,14 +115,10 @@ class MainActivity : Activity() {
         }
         val command = pendingCommands.removeFirst()
         executeSingleCommand(command)
-        waitingForPackage = contextPackage
-        waitingSince = android.os.SystemClock.uptimeMillis()
-        if (pendingCommands.isNotEmpty()) {
-            // ننتظر انتهاء خطوة إمكانية الوصول وظهور التطبيق الهدف قبل الأمر التالي.
-            planHandler.postDelayed({ runNextPlannedCommand() }, 120L)
-        } else {
-            planHandler.postDelayed({ runNextPlannedCommand() }, 120L)
-        }
+        // أي أمر وصول يُبقي الخدمة مشغولة حتى ينجح أو يفشل بوضوح. لا ننتظر
+        // اسم الحزمة القديمة؛ ذلك كان يمنع الأمر التالي إذا بقيت الشاشة
+        // الأخيرة مسجلة من جلسة سابقة.
+        planHandler.postDelayed({ runNextPlannedCommand() }, 180L)
     }
 
     private fun splitCommands(text: String): List<String> {

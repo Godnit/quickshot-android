@@ -128,12 +128,20 @@ class NaffithAccessibilityService : AccessibilityService() {
     }
 
     private fun targetRoot(target: String): AccessibilityNodeInfo? {
+        fun matches(pkg: String?): Boolean {
+            val actual = pkg.orEmpty()
+            if (actual == target) return true
+            // MX Player قد يبدّل بين نسخة الإعلانات والنسخة الاحترافية أو
+            // يفتح Activity من حزمة شقيقة؛ كلاهما نفس التطبيق للمستخدم.
+            if (target.startsWith("com.mxtech") && actual.startsWith("com.mxtech")) return true
+            return false
+        }
         val active = rootInActiveWindow
-        if (active?.packageName?.toString() == target) return active
+        if (matches(active?.packageName?.toString())) return active
         active?.recycle()
         for (window in windows) {
             val root = window.root ?: continue
-            if (root.packageName?.toString() == target) return root
+            if (matches(root.packageName?.toString())) return root
             root.recycle()
         }
         return null

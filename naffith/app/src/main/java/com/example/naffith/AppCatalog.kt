@@ -90,6 +90,30 @@ class AppCatalog(private val context: Context) {
             label.contains("file") || label.contains("files") || label.contains("manager") ||
                 label.contains("ملف") || label.contains("ملفات") || label.contains("مستكشف")
 
+        fun isDocumentPickerPackage(pkg: String): Boolean =
+            pkg.contains("documentsui") || pkg.contains("providers.downloads") ||
+                pkg.contains("filepicker") || pkg.contains("document picker")
+
+        // ابحث أولًا عن اختصار تشغيل حقيقي يحمل اسم مدير الملفات. إطلاق
+        // ACTION_OPEN_DOCUMENT أو DocumentsUI هو منتقي ملفات، وليس التطبيق
+        // الذي طلبه المستخدم، وغالبًا يعيد فتح «التنزيلات».
+        val namedLauncher = all()
+            .filter { app ->
+                val label = ArabicText.normalize(app.label)
+                !isDocumentPickerPackage(app.packageName.lowercase()) &&
+                    !isDownloadsLabel(label) && isRealFileManagerLabel(label)
+            }
+            .sortedWith(compareBy<InstalledApp> {
+                val label = ArabicText.normalize(it.label)
+                when {
+                    label.contains("اداره الملفات") || label.contains("مدير الملفات") -> 0
+                    label.contains("ملفاتي") || label.contains("files by google") -> 1
+                    else -> 2
+                }
+            }.thenBy { ArabicText.normalize(it.label) })
+            .firstOrNull()
+        if (namedLauncher != null) return namedLauncher
+
         val handlers = pm.queryIntentActivities(filesIntent, 0)
             .filter { info ->
                 val pkg = info.activityInfo?.packageName.orEmpty()
