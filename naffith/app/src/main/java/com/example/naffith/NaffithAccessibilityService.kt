@@ -19,7 +19,7 @@ import android.view.accessibility.AccessibilityWindowInfo
 
 /** خطة قصيرة ومحددة بطلب المستخدم، مع انتظار الشاشة وتوقف عند غياب العناصر. */
 class NaffithAccessibilityService : AccessibilityService() {
-    private enum class Kind { SEARCH, WRITE, CALCULATE, PLAY, DOWNLOAD_IMAGE, CLICK }
+    private enum class Kind { SEARCH, WRITE, CALCULATE, PLAY, DOWNLOAD_IMAGE, CLICK, OPEN_FILES, OPEN_FOLDER }
     private data class Job(
         val packageName: String,
         val kind: Kind,
@@ -114,6 +114,7 @@ class NaffithAccessibilityService : AccessibilityService() {
                 Kind.CALCULATE -> calculatorStep(current, nodes)
                 Kind.PLAY -> playStep(current, nodes)
                 Kind.DOWNLOAD_IMAGE -> imageStep(current, nodes)
+                Kind.OPEN_FILES, Kind.OPEN_FOLDER -> fileManagerStep(current, nodes)
                 Kind.CLICK -> {
                     val label = current.text
                     val node = nodes.firstOrNull { it.isVisibleToUser && !it.isEditable &&
@@ -259,11 +260,12 @@ class NaffithAccessibilityService : AccessibilityService() {
             1 -> {
                 val preview = imageNodes(nodes).maxByOrNull { bounds(it).width() * bounds(it).height() } ?: return
                 val accepted = preview.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK) || touch(preview, 850L)
-                if (accepted) waitFor(2, 500L)
+                if (accepted) waitFor(2, 850L)
             }
             2 -> {
                 val download = nodes.firstOrNull { it.isVisibleToUser &&
-                    (AutomationRules.downloadButton(nodeText(it)) || id(it).contains("download") || id(it).contains("save")) && clickable(it) }
+                    (AutomationRules.downloadButton(nodeText(it)) || id(it).contains("download") || id(it).contains("save") ||
+                        id(it).contains("context_menu")) && clickable(it) }
                 if (download != null && click(download)) {
                     downloadedImageKeys += beforePlay
                     current.downloaded++
@@ -275,7 +277,64 @@ class NaffithAccessibilityService : AccessibilityService() {
                         waitFor(0, 650L)
                     }
                 }
-                else if (++attempts > 15) finish("فتحت نتائج الصور، لكن المتصفح لم يعرض خيار تنزيل الصورة. احفظ الصورة يدويًا.")
+                else if (++attempts % 8 == 0) {
+                    // Chrome قد يغلق قائمة الضغط المطول أثناء انتقال الصورة؛ أعد فتحها قبل الفشل.
+                    val preview = imageNodes(nodes).maxByOrNull { bounds(it).width() * bounds(it).height() }
+                    if (preview != null) {
+                        preview.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
+                        touch(preview, 850L)
+                    }
+                } else if (attempts > 45) finish("فتحت نتائج الصور، لكن المتصفح لم يعرض خيار تنزيل الصورة. احفظ الصورة يدويًا.")
+            }
+        }
+    }
+
+    /** يخرج من مجلد التنزيلات إلى واجهة مدير الملفات قبل تنفيذ أي أمر داخله. */
+    private fun fileManagerStep(current: Job, nodes: List<AccessibilityNodeInfo>) {
+        val texts = nodes.map(::nodeText).map(ArabicText::normalize).filter { it.isNotBlank() }
+        val downloadsScreen = texts.any { it == "تنزيلات" || it == "downloads" }
+        val targetFolder = current.kind == Kind.OPEN_FOLDER
+
+        if (!downloadsScreen && stage == 0) {
+            if (!targetFolder) {
+                finish("تم فتح إدارة الملفات من الجذر.")
+                return
+            }
+            val folder = nodes.firstOrNull { it.isVisibleToUser && clickable(it) &&
+                AutomationRules.clickCandidate(nodeText(it), id(it), current.text) }
+            if (folder != null && click(folder)) {
+                finish("تم فتح مجلد «${current.text}» داخل إدارة الملفات.")
+            } else if (++attempts > 35) {
+                finish("فتحت إدارة الملفات، لكن لم أجد مجلد «${current.text}».")
+            }
+            return
+        }
+
+        when (stage) {
+            0 -> {
+                val menu = nodes.firstOrNull { it.isVisibleToUser && clickable(it) &&
+                    (id(it).contains("drawer") || id(it).contains("navigation") ||
+                        id(it).contains("roots") || ArabicText.normalize(nodeText(it)) in
+                        setOf("القائمه", "القائمة", "menu", "مواقع", "locations")) }
+                if (menu != null && click(menu)) waitFor(1, 450L)
+                else if (++attempts > 30) finish("فتحت إدارة الملفات، لكن لم أستطع مغادرة مجلد التنزيلات.")
+            }
+            1 -> {
+                val storage = nodes.firstOrNull { it.isVisibleToUser && clickable(it) &&
+                    (AutomationRules.clickCandidate(nodeText(it), id(it), "التخزين الداخلي") ||
+                        ArabicText.normalize(nodeText(it)) in setOf("الرئيسيه", "الرئيسية", "home", "جهاز", "device")) }
+                if (storage != null && click(storage)) waitFor(2, 500L)
+                else if (++attempts > 30) finish("فتحت مدير الملفات، لكن لم أجد الذاكرة الداخلية.")
+            }
+            2 -> {
+                if (!targetFolder) {
+                    if (!downloadsScreen) finish("تم فتح إدارة الملفات من الجذر.")
+                } else {
+                    val folder = nodes.firstOrNull { it.isVisibleToUser && clickable(it) &&
+                        AutomationRules.clickCandidate(nodeText(it), id(it), current.text) }
+                    if (folder != null && click(folder)) finish("تم فتح مجلد «${current.text}» داخل إدارة الملفات.")
+                    else if (++attempts > 30) finish("فتحت إدارة الملفات، لكن لم أجد مجلد «${current.text}».")
+                }
             }
         }
     }
@@ -374,6 +433,8 @@ class NaffithAccessibilityService : AccessibilityService() {
         fun requestImageDownload(packageName: String, query: String, count: Int = 1) =
             request(Job(packageName, Kind.DOWNLOAD_IMAGE, query, downloadCount = count.coerceIn(1, 9)))
         fun requestClick(packageName: String, label: String) = request(Job(packageName, Kind.CLICK, label))
+        fun requestOpenFiles(packageName: String) = request(Job(packageName, Kind.OPEN_FILES, ""))
+        fun requestOpenFolder(packageName: String, folder: String) = request(Job(packageName, Kind.OPEN_FOLDER, folder))
         fun stop() { instance?.finish("أوقفت التنفيذ.") }
         fun back() = instance?.performGlobalAction(GLOBAL_ACTION_BACK) == true
         fun home() = instance?.performGlobalAction(GLOBAL_ACTION_HOME) == true
