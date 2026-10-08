@@ -25,6 +25,8 @@ sealed class LocalAction {
     object OpenSettings : LocalAction()
     object ListApps : LocalAction()
     object ReadScreen : LocalAction()
+    data class LearnApp(val query: String? = null) : LocalAction()
+    data class DescribeApp(val query: String? = null) : LocalAction()
     object Back : LocalAction()
     object Home : LocalAction()
     object Stop : LocalAction()
@@ -33,7 +35,11 @@ sealed class LocalAction {
 }
 
 /** محلل محلي صغير للأوامر؛ لا يستخدم نموذجًا لغويًا أو API. */
-class RuleBasedArabicBrain : LocalBrain {
+class RuleBasedArabicBrain(
+    /** أسماء التطبيقات الحالية من AppCatalog؛ تجعل المحلل قابلًا للتوسع دون
+     * تعديل الكود عند تثبيت تطبيق جديد. */
+    private val dynamicAppNames: () -> List<String> = { emptyList() }
+) : LocalBrain {
     private val appWords = listOf(
         "يوتيوب", "يوتيوب ميوزك", "youtube", "كروم", "chrome", "المتصفح",
         "تشات جي بي تي", "شات جي بي تي", "تشاتgpt", "chatgpt", "chat gpt", "chat",
@@ -66,6 +72,25 @@ class RuleBasedArabicBrain : LocalBrain {
         if (n in setOf("الشاشه الرئيسيه", "ارجع للرئيسيه", "افتح الرئيسيه")) return LocalAction.Home
         if (n in setOf("اقرا الشاشه", "ما في الشاشه", "ايش في الشاشه", "ماذا علي الشاشه")) return LocalAction.ReadScreen
         if (listOf("التطبيقات المثبته", "التطبيقات الموجوده", "التطبيقات عندي", "ايش التطبيقات", "قائمه التطبيقات", "ما هي التطبيقات").any { n.contains(it) }) return LocalAction.ListApps
+        val learnPrefix = listOf(
+            "تعلم التطبيق", "تعلم هذا التطبيق", "تعلم تطبيق", "تعلم",
+            "حلل التطبيق", "حلل تطبيق", "استكشف التطبيق", "استكشف تطبيق",
+            "درب التطبيق", "درب تطبيق", "عرف التطبيق", "عرف تطبيق"
+        ).firstOrNull { n == it || n.startsWith("$it ") }
+        if (learnPrefix != null) {
+            val query = n.removePrefix(learnPrefix).trim()
+                .removePrefix("عن").trim().takeIf { it.isNotBlank() }
+            return LocalAction.LearnApp(query)
+        }
+        val describePrefix = listOf(
+            "ماذا تعلمت عن", "ما الذي تعلمته عن", "ايش تعلمت عن", "ايش تعرف عن",
+            "معرفه التطبيق", "معرفة التطبيق", "عناصر التطبيق", "كيف استخدم",
+            "كيف تستخدم", "كيف استعمل"
+        ).firstOrNull { n == it || n.startsWith("$it ") }
+        if (describePrefix != null) {
+            val query = n.removePrefix(describePrefix).trim().takeIf { it.isNotBlank() }
+            return LocalAction.DescribeApp(query)
+        }
 
         // «ادخل تطبيق X» داخل مدير الملفات يعني فتح العنصر الظاهر، وليس تشغيل X
         // من قائمة التطبيقات المثبتة.
@@ -157,7 +182,16 @@ class RuleBasedArabicBrain : LocalBrain {
 
     private fun knownApp(n: String): String? {
         val padded = " $n "
-        val found = appWords.firstOrNull { padded.contains(" $it ") || padded.contains(" و$it ") } ?: return null
+        val found = appWords.firstOrNull { padded.contains(" $it ") || padded.contains(" و$it ") }
+        if (found == null) {
+            // ابحث في أسماء التطبيقات المثبتة والتسميات الدلالية التي بناها
+            // AppCatalog. نعيد الاسم الفعلي كي تحله MainActivity بالحزمة.
+            return dynamicAppNames()
+                .map { it to ArabicText.normalize(it) }
+                .filter { (_, alias) -> alias.length >= 3 && (n == alias || n.contains(" $alias ") || n.startsWith("$alias ")) }
+                .maxByOrNull { it.second.length }
+                ?.first
+        }
         return when {
             found.contains("يوتيوب") || found == "youtube" -> "يوتيوب"
             found.contains("تشات") || found.contains("شات") || found in setOf("تشاتgpt", "chatgpt", "chat gpt", "chat") -> "تشات جي بي تي"
@@ -184,9 +218,15 @@ class RuleBasedArabicBrain : LocalBrain {
             found.contains("مسجل") || found.contains("recorder") -> "مسجل الصوت"
             found.contains("راديو") || found.contains("radio") -> "الراديو"
             found.contains("سيار") || found.contains("سباق") || found.contains("hill") || found.contains("racing") || found.contains("car") -> "السيارة"
-            else -> "الصور"
+            else -> dynamicAppMatch(n) ?: "الصور"
         }
     }
+
+    private fun dynamicAppMatch(n: String): String? = dynamicAppNames()
+        .map { it to ArabicText.normalize(it) }
+        .filter { (_, alias) -> alias.length >= 3 && (n == alias || n.contains(" $alias ") || n.startsWith("$alias")) }
+        .maxByOrNull { it.second.length }
+        ?.first
 
     private fun navigationTarget(n: String): String? {
         val checks = listOf(
@@ -232,7 +272,8 @@ class RuleBasedArabicBrain : LocalBrain {
             }
         } else {
             // احذف مقدمة الأمر فقط؛ لا تحذف الكلمات المماثلة من عنوان البحث.
-            val routeWords = appWords.flatMap { it.split(' ') }.toSet() + setOf("في", "لي", "تطبيق", "التطبيق", "جوجل", "google", "الويب", "الانترنت")
+            val routeWords = (appWords + dynamicAppNames().flatMap { ArabicText.normalize(it).split(' ') })
+                .flatMap { it.split(' ') }.toSet() + setOf("في", "لي", "تطبيق", "التطبيق", "جوجل", "google", "الويب", "الانترنت")
             while (start < keys.size && keys[start] in routeWords) start++
             if (keys.getOrNull(start) == "عن") start++
         }
