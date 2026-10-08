@@ -61,12 +61,41 @@ class AppCatalog(private val context: Context) {
             findFiles()?.let { return it }
         }
         val apps = all()
-        val match = AppNameMatcher.find(query, apps.map { AppName(it.packageName, it.label) }) ?: return null
-        return apps.firstOrNull { it.packageName == match.packageName }
+        val match = AppNameMatcher.find(query, apps.map { AppName(it.packageName, it.label) })
+        if (match != null) apps.firstOrNull { it.packageName == match.packageName }?.let { return it }
+        val normalizedQuery = ArabicText.normalize(query)
+        return apps.firstOrNull { app -> naturalAliases(app).any { ArabicText.normalize(it) == normalizedQuery } }
     }
 
     fun findPackage(packageName: String): InstalledApp? =
         all().firstOrNull { it.packageName == packageName }
+
+    /** أسماء عربية عامة مبنية من اسم الحزمة/التسمية، لتشغيل تطبيقات جديدة دون
+     * إضافة اسمها يدويًا في كل تحديث. */
+    fun naturalAliases(app: InstalledApp): List<String> {
+        val value = ArabicText.normalize("${app.label} ${app.packageName}")
+        val aliases = linkedSetOf<String>()
+        fun ifContains(vararg words: String, alias: String) {
+            if (words.any { value.contains(ArabicText.normalize(it)) }) aliases += alias
+        }
+        ifContains("gallery", "photos", "صور", alias = "معرض الصور")
+        ifContains("file manager", "files", "filemanager", "myfiles", "hidisk", alias = "إدارة الملفات")
+        ifContains("camera", "كاميرا", alias = "الكاميرا")
+        ifContains("calculator", "حاسبة", alias = "الحاسبة")
+        ifContains("browser", "chrome", "firefox", "brave", alias = "المتصفح")
+        ifContains("telegram", alias = "تليجرام")
+        ifContains("whatsapp", alias = "واتساب")
+        ifContains("messenger", alias = "ماسنجر")
+        ifContains("music", "player", "audio", alias = "مشغل الموسيقى")
+        ifContains("youtube", alias = "يوتيوب")
+        ifContains("chatgpt", "openai", alias = "تشات جي بي تي")
+        return aliases.toList()
+    }
+
+    /** جميع التسميات التي يمكن للمحلل المحلي استخدامها عند وجود تطبيق جديد. */
+    fun naturalNames(): List<String> = all().flatMap { app ->
+        listOf(app.label, app.packageName) + naturalAliases(app)
+    }.filter { it.length >= 2 }.distinct()
 
     private fun fileRootIntent(intent: Intent): Intent = Intent(intent).apply {
         // تتجاهله تطبيقات الملفات التي لا تدعم DocumentsContract، بينما تمنع

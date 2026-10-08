@@ -18,7 +18,7 @@ import android.os.Looper
 import java.util.ArrayDeque
 
 class MainActivity : Activity() {
-    private val brain: LocalBrain = RuleBasedArabicBrain()
+    private lateinit var brain: LocalBrain
     private lateinit var catalog: AppCatalog
     private lateinit var commandInput: EditText
     private lateinit var logView: TextView
@@ -32,6 +32,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         catalog = AppCatalog(this)
+        brain = RuleBasedArabicBrain { catalog.naturalNames() }
         commandInput = findViewById(R.id.commandInput)
         logView = findViewById(R.id.logView)
         findViewById<Button>(R.id.executeButton).setOnClickListener { executeCommand(commandInput.text.toString()) }
@@ -88,6 +89,8 @@ class MainActivity : Activity() {
             LocalAction.OpenSettings -> openSettings()
             LocalAction.ListApps -> listInstalledApps()
             LocalAction.ReadScreen -> readScreen()
+            is LocalAction.LearnApp -> learnApp(action.query)
+            is LocalAction.DescribeApp -> describeApp(action.query)
             LocalAction.Back -> appendLog(if (NaffithAccessibilityService.back()) "نفّذ: رجعت للخلف." else "نفّذ: فعّل إمكانية الوصول أولًا.")
             LocalAction.Home -> appendLog(if (NaffithAccessibilityService.home()) "نفّذ: رجعت إلى الشاشة الرئيسية." else "نفّذ: فعّل إمكانية الوصول أولًا.")
             LocalAction.Stop -> {
@@ -376,11 +379,37 @@ class MainActivity : Activity() {
 
     private fun readScreen() {
         val text = NaffithAccessibilityService.latestScreenText
-        appendLog(if (text.isBlank()) "نفّذ: لا توجد قراءة شاشة بعد. افتح التطبيق ثم جرّب مرة أخرى." else "قراءة الشاشة الحالية:\n$text")
+        val pkg = NaffithAccessibilityService.latestScreenPackage
+        val learned = if (pkg.isBlank()) null else NaffithAccessibilityService.learnedAppDescription(pkg)
+        appendLog(if (text.isBlank()) "نفّذ: لا توجد قراءة شاشة بعد. افتح التطبيق ثم جرّب مرة أخرى."
+        else "قراءة الشاشة الحالية${if (pkg.isBlank()) "" else " ($pkg)"}:\n$text${if (learned == null) "" else "\n\n$learned"}")
+    }
+
+    private fun learnApp(query: String?) {
+        val app = query?.let { catalog.find(it) }
+        val packageName = app?.packageName ?: contextPackage.ifBlank { NaffithAccessibilityService.latestScreenPackage }
+        if (app == null && packageName.isBlank()) {
+            appendLog("نفّذ: افتح التطبيق الذي تريد تعلّمه ثم اكتب «تعلم التطبيق».")
+            return
+        }
+        contextPackage = packageName
+        if (app != null && NaffithAccessibilityService.latestScreenPackage != packageName) launchExternal(app.intent)
+        appendLog("نفّذ: سأتعلم واجهة ${app?.label ?: packageName} محليًا. تنقّل داخل شاشاته مرة واحدة، ثم استخدم «اقرأ الشاشة» أو اطلب الزر/القسم بالاسم.")
+    }
+
+    private fun describeApp(query: String?) {
+        val app = query?.let { catalog.find(it) }
+        val packageName = app?.packageName ?: contextPackage.ifBlank { NaffithAccessibilityService.latestScreenPackage }
+        if (packageName.isBlank()) {
+            appendLog("نفّذ: افتح التطبيق أولًا أو اكتب اسمه بعد «ماذا تعلمت عن».")
+            return
+        }
+        appendLog(NaffithAccessibilityService.learnedAppDescription(packageName)
+            ?: "نفّذ: لم أتعلم عناصر هذا التطبيق بعد. افتحه وتنقّل في شاشته ثم جرّب مرة أخرى.")
     }
 
     private fun showHelp() {
-        appendLog("أمثلة:\n• افتح يوتيوب وابحث عن أغنية يا ليلي وشغلها\n• افتح مشغل MX وابحث عن موسيقى وشغلها\n• افتح الحاسبة واحسب 500+645\n• افتح كروم وابحث عن صور قطط وحمل صورة\n• اكتب في كروم قطط واضغط بحث\n• اضغط تنزيل\n• ما هي التطبيقات المثبتة\n• اقرأ الشاشة / رجوع / الرئيسية / توقف")
+        appendLog("أمثلة:\n• افتح يوتيوب وابحث عن أغنية يا ليلي وشغلها\n• افتح مشغل MX وابحث عن موسيقى وشغلها\n• افتح الحاسبة واحسب 500+645\n• افتح كروم وابحث عن صور قطط وحمل صورة\n• اكتب في كروم قطط واضغط بحث\n• اضغط زر الإرسال أو زر المشاركة\n• ما هي التطبيقات المثبتة\n• تعلم التطبيق\n• ماذا تعلمت عن يوتيوب\n• اقرأ الشاشة / رجوع / الرئيسية / توقف")
     }
 
     private fun appendLog(message: String) {
