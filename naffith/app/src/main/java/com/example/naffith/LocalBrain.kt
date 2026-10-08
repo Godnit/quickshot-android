@@ -15,7 +15,7 @@ sealed class LocalAction {
     ) : LocalAction()
     data class SearchWeb(val query: String) : LocalAction()
     /** بحث في التطبيق الظاهر حاليًا، ويُستخدم خصوصًا لمدير الملفات. */
-    data class SearchCurrent(val query: String) : LocalAction()
+    data class SearchCurrent(val query: String, val playFirst: Boolean = false) : LocalAction()
     data class Write(val appQuery: String?, val text: String, val submit: Boolean) : LocalAction()
     data class Click(val label: String) : LocalAction()
     data class OpenFolder(val folder: String) : LocalAction()
@@ -92,7 +92,7 @@ class RuleBasedArabicBrain : LocalBrain {
             if (query.isBlank()) return LocalAction.Unknown(original)
             // صيغة «دور تطبيق تلجرام» لا تحدد تطبيقًا خارجيًا؛ ابحث في الشاشة الحالية.
             if (keys.getOrNull(searchIndex + 1) in setOf("تطبيق", "التطبيق", "ملف", "الملف", "مجلد", "المجلد")) {
-                return LocalAction.SearchCurrent(query)
+                return LocalAction.SearchCurrent(query, play)
             }
             when (app) {
                 "يوتيوب" -> return LocalAction.SearchYoutube(removeSongPrefix(query), play)
@@ -116,7 +116,9 @@ class RuleBasedArabicBrain : LocalBrain {
                     if (target != null && ArabicText.normalize(target) !in setOf("جوجل", "google", "الويب", "الانترنت")) {
                         return LocalAction.OpenAppAndSearch(target, query, play)
                     }
-                    return LocalAction.SearchWeb(query)
+                    // عندما لا يذكر المستخدم اسم التطبيق، احتفظ بالأمر كسياقي.
+                    // MainActivity تختار التطبيق المفتوح (إن وجد) أو الويب كحل احتياطي.
+                    return LocalAction.SearchCurrent(query, play)
                 }
                 else -> return LocalAction.OpenAppAndSearch(app, query, play)
             }
@@ -212,7 +214,8 @@ class RuleBasedArabicBrain : LocalBrain {
                 break
             }
         }
-        return tokens.subList(start.coerceAtMost(end), end).joinToString(" ").trim(' ', '،', ',', '"', '«', '»')
+        return tokens.subList(start.coerceAtMost(end), end).joinToString(" ")
+            .trim(' ', '،', ',', '"', '«', '»', 'و')
     }
 
     private fun searchTarget(tokens: List<String>, keys: List<String>, index: Int): String? {
