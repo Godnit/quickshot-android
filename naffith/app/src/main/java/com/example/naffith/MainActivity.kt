@@ -57,6 +57,8 @@ class MainActivity : Activity() {
             Toast.makeText(this, "اكتب أمرًا أولًا", Toast.LENGTH_SHORT).show()
             return
         }
+        // يمنع بقاء مؤقتات خطة قديمة تعمل عند الرجوع إلى «نفّذ» وبدء أمر جديد.
+        planHandler.removeCallbacksAndMessages(null)
         val parts = splitCommands(text)
         if (parts.size > 1) {
             pendingCommands.clear()
@@ -414,7 +416,9 @@ class MainActivity : Activity() {
 
     private fun appendLog(message: String) {
         val current = logView.text.toString()
-        logView.text = message + if (current.isBlank()) "" else "\n\n$current"
+        val combined = message + if (current.isBlank()) "" else "\n\n$current"
+        // السجل الطويل كان يجعل فتح التطبيق مرة ثانية بطيئًا ويستهلك الذاكرة.
+        logView.text = combined.take(14000)
     }
 
     /** يفرض تشغيل التطبيق الهدف في مهمة خارجية بدل أي مسار داخل واجهة نفّذ. */

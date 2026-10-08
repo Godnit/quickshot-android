@@ -98,7 +98,7 @@ class RuleBasedArabicBrain(
             ?.groupValues?.getOrNull(1)?.trim(' ', '،', ',', '.', '؟', '?')
         if (!enterItem.isNullOrBlank()) return LocalAction.Click(enterItem)
 
-        val storage = Regex("^(?:و)?(?:ادخل|دخل|اذهب الى|اذهب ل|افتح)\\s+(قرص الذاكره|قرص الذاكرة|بطاقه الذاكره|بطاقة الذاكرة|الذاكره الداخليه|الذاكرة الداخلية|internal storage|sd card|storage)$")
+        val storage = Regex("^(?:و)?(?:ادخل|دخل|اذهب الى|اذهب ل|افتح)\\s+(قرص الذاكره|قرص الذاكرة|بطاقه الذاكره|بطاقة الذاكرة|الذاكره الداخليه|الذاكرة الداخلية|وحده التخزين الداخليه|وحدة التخزين الداخلية|التخزين الداخلي|internal storage|phone storage|sd card|storage)$")
             .find(n)?.groupValues?.getOrNull(1)
         if (!storage.isNullOrBlank()) return LocalAction.OpenFolder(storage)
 

@@ -62,15 +62,30 @@ object AutomationRules {
     fun clickCandidate(text: String, id: String, target: String): Boolean {
         val value = ArabicText.normalize(text)
         val wanted = ArabicText.normalize(target)
+            .removePrefix("زر ").removePrefix("زر")
+            .removePrefix("زر ").trim()
         if (value == wanted || value.contains(wanted)) return true
         val name = id.lowercase()
-        if (wanted in setOf("قرص الذاكره", "بطاقه الذاكره", "الذاكره الداخليه", "internal storage", "sd card", "storage")) {
+        if (wanted in setOf("قرص الذاكره", "بطاقه الذاكره", "الذاكره الداخليه", "وحده التخزين الداخليه", "التخزين الداخلي", "internal storage", "phone storage", "sd card", "storage")) {
             val storageLabels = setOf(
                 "قرص الذاكره", "بطاقه الذاكره", "الذاكره الداخليه", "التخزين الداخلي", "وحده التخزين",
-                "وحده التخزين الداخليه", "internal storage", "phone", "storage", "sd card", "memory card", "بطاقه sd"
+                "وحده التخزين الداخليه", "internal storage", "phone storage", "phone", "storage", "sd card", "memory card", "بطاقه sd"
             )
             if (storageLabels.any { value.contains(it) } || name.contains("storage") || name.contains("sdcard") || name.contains("memory")) return true
         }
+        val aliases = when (wanted) {
+            "ارسال", "ارسل" -> setOf("ارسال", "send", "submit", "post")
+            "بحث", "ابحث" -> setOf("بحث", "search", "find", "go")
+            "اعجاب", "لايك", "اعجبني" -> setOf("اعجاب", "like", "thumbs up")
+            "مشاركه", "شارك" -> setOf("مشاركه", "share")
+            "حفظ" -> setOf("حفظ", "save")
+            "قائمه", "القائمه" -> setOf("قائمه", "menu", "more options")
+            "اعدادات", "الاعدادات" -> setOf("اعدادات", "settings", "preferences")
+            "التالي" -> setOf("التالي", "next")
+            "السابق" -> setOf("السابق", "previous", "back")
+            else -> emptySet()
+        }.map(ArabicText::normalize)
+        if (aliases.any { value.contains(it) } || aliases.any { name.contains(it) }) return true
         return when {
             wanted in setOf("اعجاب", "لايك", "اعجبني", "like") ->
                 value.contains("اعجب") || value.contains("like") || name.contains("like")

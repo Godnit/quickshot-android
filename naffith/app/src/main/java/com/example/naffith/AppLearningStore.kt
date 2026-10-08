@@ -27,6 +27,9 @@ class AppLearningStore(context: Context) {
     private var lastSignature = ""
     private var lastAt = 0L
     private val lastScreenByPackage = mutableMapOf<String, String>()
+    // حدث الضغط يصل أحيانًا قبل أن تتغير شجرة الشاشة؛ نحتفظ به حتى تصل
+    // لقطة الشاشة التالية، وبذلك يمكن إعادة تنفيذ المسار الذي علّمه المستخدم.
+    private val pendingViaByPackage = mutableMapOf<String, UiSelector>()
 
     fun observe(packageName: String, appLabel: String, nodes: List<AccessibilityNodeInfo>, via: UiSelector? = null) {
         if (packageName.isBlank() || packageName == ownPackageName) return
@@ -62,7 +65,10 @@ class AppLearningStore(context: Context) {
         if (candidates.isEmpty()) return
         val signature = candidates.joinToString(";") { "${it.role}|${it.label}|${it.viewId}" }
         val now = System.currentTimeMillis()
-        if (packageName == lastPackage && signature == lastSignature && now - lastAt < 900L) return
+        if (packageName == lastPackage && signature == lastSignature && now - lastAt < 900L) {
+            if (via != null) pendingViaByPackage[packageName] = via
+            return
+        }
         lastPackage = packageName
         lastSignature = signature
         lastAt = now
@@ -101,19 +107,22 @@ class AppLearningStore(context: Context) {
         }
         while (screens.length() > MAX_SCREENS) screens.remove(0)
         record.put("screens", screens)
-        if (previousScreen != null && previousScreen != screen.key && via != null) {
+        if (via != null) pendingViaByPackage[packageName] = via
+        val transitionVia = via ?: pendingViaByPackage[packageName]
+        if (previousScreen != null && previousScreen != screen.key && transitionVia != null) {
             val edges = record.optJSONArray("edges") ?: JSONArray()
-            val edgeKey = "$previousScreen|${screen.key}|${via.viewId}|${via.semantic}|${via.labelHash}"
+            val edgeKey = "$previousScreen|${screen.key}|${transitionVia.viewId}|${transitionVia.semantic}|${transitionVia.labelHash}"
             if ((0 until edges.length()).none { edges.optJSONObject(it)?.optString("key") == edgeKey }) {
                 edges.put(JSONObject().apply {
                     put("key", edgeKey)
                     put("from", previousScreen)
                     put("to", screen.key)
-                    put("via", selectorJson(via))
+                    put("via", selectorJson(transitionVia))
                 })
             }
             while (edges.length() > MAX_EDGES) edges.remove(0)
             record.put("edges", edges)
+            pendingViaByPackage.remove(packageName)
         }
         lastScreenByPackage[packageName] = screen.key
         prefs.edit().putString(key, record.toString()).apply()
