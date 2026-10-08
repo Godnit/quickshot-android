@@ -1,6 +1,7 @@
 package com.example.naffith
 
 import android.app.Activity
+import android.app.SearchManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -202,7 +203,16 @@ class MainActivity : Activity() {
         youtube?.let { contextPackage = it.packageName }
         val url = if (query.isBlank()) "https://www.youtube.com" else "https://www.youtube.com/results?search_query=${Uri.encode(query)}"
         val queued = if (playFirst && youtube != null) NaffithAccessibilityService.requestPlayFirst(youtube.packageName, query) else false
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { youtube?.let { setPackage(it.packageName) } }
+        val intent = if (query.isBlank()) {
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { youtube?.let { setPackage(it.packageName) } }
+        } else {
+            // ACTION_VIEW لا يبدأ البحث في بعض إصدارات YouTube؛ ACTION_SEARCH
+            // يفتح حقل النتائج مباشرة مع تمرير العبارة إلى التطبيق نفسه.
+            Intent(Intent.ACTION_SEARCH).apply {
+                youtube?.let { setPackage(it.packageName) }
+                putExtra(SearchManager.QUERY, query)
+            }
+        }
         if (!launchExternal(intent)) launchExternal(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         appendLog(if (query.isBlank()) "نفّذ: فتحت يوتيوب."
         else if (playFirst && queued) "نفّذ: بحثت في يوتيوب عن «$query» وسأحاول تشغيل أول نتيجة."
