@@ -278,6 +278,13 @@ class MainActivity : Activity() {
         val fileApp = catalog.findFiles()
         if (targetPackage.isBlank() || targetPackage == packageName) targetPackage = fileApp?.packageName.orEmpty()
         if (targetPackage.isBlank()) { searchWeb(query); return }
+        // يوتيوب يحتفظ بأزرار الأقسام (الاشتراكات/الشورت) في شاشات مختلفة؛
+        // ACTION_SEARCH يرسل البحث للتطبيق نفسه من أي قسم بدل محاولة النقر
+        // على زر بحث خاص بالقسم الحالي.
+        if (targetPackage == "com.google.android.youtube") {
+            searchYoutube(query, playFirst)
+            return
+        }
         contextPackage = targetPackage
         val queued = NaffithAccessibilityService.requestSearch(targetPackage, query, playFirst)
         if (NaffithAccessibilityService.latestScreenPackage != targetPackage) {

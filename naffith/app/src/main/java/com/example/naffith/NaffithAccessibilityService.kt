@@ -150,6 +150,13 @@ class NaffithAccessibilityService : AccessibilityService() {
                 val button = nodes.firstOrNull { !it.isEditable && it.isVisibleToUser && clickable(it) &&
                     (AutomationRules.submitButton(nodeText(it), id(it)) || id(it).substringAfterLast('/') in setOf("search", "menu_search", "action_search", "search_btn")) }
                 if (button != null && click(button)) waitFor(1, 280L)
+                else {
+                    // بعض إصدارات MX/يوتيوب تعرض أيقونة البحث كرسم بلا نص أو
+                    // رقم مورد؛ انقر موضع شريط البحث كحل احتياطي محدود.
+                    attempts++
+                    if (attempts == 3 && tapTopBar(right = true)) waitFor(0, 520L)
+                    else if (attempts == 10 && tapTopBar(right = false)) waitFor(0, 520L)
+                }
             }
             1 -> {
                 if (input == null) return
@@ -255,8 +262,19 @@ class NaffithAccessibilityService : AccessibilityService() {
             .firstOrNull()
         if (candidate != null && click(candidate)) {
             finish("فتحت قسم «${current.text}».")
-        } else if (++attempts > 35) {
-            finish("لم أجد زر قسم «${current.text}» في التطبيق الحالي.")
+        } else {
+            attempts++
+            if (current.text == "like" && current.packageName == "com.google.android.youtube" && attempts <= 8) {
+                // إذا طُلب الإعجاب من صفحة النتائج، افتح أول فيديو ثم أعد
+                // البحث عن زر الإعجاب بعد ظهور صفحة المشاهدة.
+                val firstVideo = nodes.firstOrNull { it.isVisibleToUser && !it.isEditable && clickable(it) &&
+                    AutomationRules.playCandidate(nodeText(it), id(it), "", mx = false) }
+                if (firstVideo != null && click(firstVideo)) waitFor(0, 900L)
+            }
+            // زر الإعجاب أسفل عنوان الفيديو في تطبيق يوتيوب وقد لا يظهر قبل
+            // تمرير الشاشة قليلًا. أعد الفحص بعد تمريرين بدل إنهاء الخطة فورًا.
+            if (current.text == "like" && attempts % 8 == 0) swipeUp()
+            if (attempts > 45) finish("لم أجد زر قسم «${current.text}» في التطبيق الحالي.")
         }
     }
 
@@ -421,6 +439,32 @@ class NaffithAccessibilityService : AccessibilityService() {
         val path = Path().apply { moveTo(x, y) }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0L, 60L))
+            .build()
+        return dispatchGesture(gesture, null, handler)
+    }
+
+    private fun tapTopBar(right: Boolean): Boolean {
+        val density = resources.displayMetrics.density
+        val width = resources.displayMetrics.widthPixels.toFloat()
+        val x = if (right) width - 34f * density else 34f * density
+        val y = 58f * density
+        val path = Path().apply { moveTo(x, y) }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0L, 60L))
+            .build()
+        return dispatchGesture(gesture, null, handler)
+    }
+
+    private fun swipeUp(): Boolean {
+        val density = resources.displayMetrics.density
+        val width = resources.displayMetrics.widthPixels.toFloat()
+        val height = resources.displayMetrics.heightPixels.toFloat()
+        val path = Path().apply {
+            moveTo(width * 0.52f, height * 0.78f)
+            lineTo(width * 0.52f, height * 0.38f)
+        }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0L, (260L * density).toLong().coerceAtMost(500L)))
             .build()
         return dispatchGesture(gesture, null, handler)
     }

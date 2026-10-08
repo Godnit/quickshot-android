@@ -7,6 +7,7 @@ object AppNameMatcher {
     private data class Group(val names: List<String>, val packages: List<String>)
     private val groups = listOf(
         Group(listOf("يوتيوب", "يو تيوب", "يوتوب", "youtube"), listOf("com.google.android.youtube")),
+        Group(listOf("تشات جي بي تي", "شات جي بي تي", "تشاتgpt", "chatgpt", "chat gpt", "chat"), listOf("com.openai.chatgpt")),
         Group(listOf("كروم", "chrome", "google chrome", "جوجل كروم", "قوقل كروم", "المتصفح"), listOf("com.android.chrome")),
         Group(listOf("ام اكس", "ام اكس بلاير", "ام اكس بليير", "مشغل ام اكس", "mx player", "mxplayer", "مشغل mx"), listOf("com.mxtech.videoplayer.ad", "com.mxtech.videoplayer.pro")),
         Group(listOf("الحاسبة", "حاسبة", "الآلة الحاسبة", "آلة حاسبة", "calculator", "calc"), listOf("com.android.calculator2", "com.google.android.calculator", "com.huawei.calculator", "com.sec.android.app.popupcalculator")),

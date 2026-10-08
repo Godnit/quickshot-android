@@ -39,7 +39,10 @@ object AutomationRules {
             val relevant = query.split(' ').filter { it.length >= 3 }.any { value.contains(ArabicText.normalize(it)) }
             return relevant && (name.contains("title") || name.contains("file_name") || name.contains("filename") || Regex("\\.(?:mp3|mp4|m4a|wav|mkv|ogg|webm)\\b").containsMatchIn(value))
         }
+        val queryTokens = query.split(Regex("\\s+")).map(ArabicText::normalize).filter { it.length >= 2 }
+        val mentionsQuery = queryTokens.isNotEmpty() && queryTokens.any { value.contains(it) }
         return name.contains("video_title") || name.contains("video_card") || name.contains("video_renderer") ||
+            (mentionsQuery && (name.contains("thumbnail") || name.contains("video") || name.contains("recycler") || name.contains("cell") || name.contains("item"))) ||
             ((value.contains("مشاهد") || value.contains("views") || value.contains("قبل ") || value.contains(" ago")) &&
                 (Regex("\\d+[:٫.]\\d{2}").containsMatchIn(value) || value.contains("دقيق") || value.contains("minute") || value.length > 45))
     }
@@ -90,7 +93,7 @@ object AutomationRules {
             "music" -> setOf("الموسيقى", "موسيقى", "music", "audio", "songs", "اغاني")
             "videos" -> setOf("الفيديوهات", "الفيديو", "videos", "video", "movies")
             "home" -> setOf("الرئيسيه", "الصفحه الرئيسيه", "home", "الرئيسية")
-            "like" -> setOf("اعجاب", "اعجبني", "لايك", "like")
+            "like" -> setOf("اعجاب", "اعجبني", "لايك", "like", "thumbs up", "اعجاب بالفيديو")
             else -> setOf(section)
         }.map(ArabicText::normalize)
         if (aliases.any { value == it || value.contains(it) }) return true
@@ -101,7 +104,7 @@ object AutomationRules {
             "music" -> name.contains("music") || name.contains("audio") || name.contains("song")
             "videos" -> name.contains("video") || name.contains("movie")
             "home" -> name.contains("home") || name.contains("navigation")
-            "like" -> name.contains("like")
+            "like" -> name.contains("like") || name.contains("thumb") || name.contains("rating")
             else -> false
         }
     }

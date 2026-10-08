@@ -36,6 +36,7 @@ sealed class LocalAction {
 class RuleBasedArabicBrain : LocalBrain {
     private val appWords = listOf(
         "يوتيوب", "يوتيوب ميوزك", "youtube", "كروم", "chrome", "المتصفح",
+        "تشات جي بي تي", "شات جي بي تي", "تشاتgpt", "chatgpt", "chat gpt", "chat",
         "ام اكس", "ام اكس بلاير", "ام اكس بليير", "مشغل ام اكس", "ام اكس", "mx player", "mxplayer",
         "الحاسبه", "الاله الحاسبه", "اله حاسبه", "الحاسبه", "calculator", "calc",
         "اداره الملفات", "مدير الملفات", "الملفات", "ملفاتي", "files", "file manager",
@@ -158,6 +159,7 @@ class RuleBasedArabicBrain : LocalBrain {
         val found = appWords.firstOrNull { padded.contains(" $it ") || padded.contains(" و$it ") } ?: return null
         return when {
             found.contains("يوتيوب") || found == "youtube" -> "يوتيوب"
+            found.contains("تشات") || found.contains("شات") || found in setOf("تشاتgpt", "chatgpt", "chat gpt", "chat") -> "تشات جي بي تي"
             found in setOf("كروم", "chrome", "المتصفح") -> "كروم"
             found.contains("اكس") || found.startsWith("mx") -> "ام اكس"
             found.contains("حاسبه") || found in setOf("calculator", "calc") -> "الحاسبة"
