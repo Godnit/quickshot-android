@@ -1,0 +1,26 @@
+name: Build Soccer 3D APK
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'soccer3d/**'
+      - '.github/workflows/soccer3d.yml'
+  workflow_dispatch:
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export Android APK
+        uses: firebelley/godot-android-action@v2.2.0
+        with:
+          godot-version: 4.2.2
+          project-path: ./soccer3d
+          export-name: Soccer3D.apk
+          export-directory: ./build
+          export-release: true
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Soccer3D-Android
+          path: build/Soccer3D.apk
