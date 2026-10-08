@@ -498,7 +498,8 @@ class NaffithAccessibilityService : AccessibilityService() {
             bottom = rect.bottom
         )
     }
-    private fun uiElements(nodes: List<AccessibilityNodeInfo>): List<UiElement> = nodes.mapIndexed(::uiElement)
+    private fun uiElements(nodes: List<AccessibilityNodeInfo>): List<UiElement> =
+        nodes.mapIndexed { index, node -> uiElement(node, index) }
     private fun clickable(node: AccessibilityNodeInfo): Boolean {
         if (node.isClickable) return true
         var parent = node.parent
