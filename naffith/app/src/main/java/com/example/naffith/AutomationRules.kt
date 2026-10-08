@@ -44,8 +44,17 @@ object AutomationRules {
                 (Regex("\\d+[:٫.]\\d{2}").containsMatchIn(value) || value.contains("دقيق") || value.contains("minute") || value.length > 45))
     }
 
-    fun downloadButton(text: String): Boolean = ArabicText.normalize(text).trimEnd('.', '…') in
-        setOf("download image", "save image", "download picture", "save picture", "تنزيل الصوره", "تحميل الصوره", "حفظ الصوره", "تنزيل", "تحميل", "حفظ")
+    fun downloadButton(text: String): Boolean {
+        val value = ArabicText.normalize(text).trimEnd('.', '…').trim()
+        if (value in setOf(
+                "download image", "save image", "download picture", "save picture",
+                "تنزيل الصوره", "تحميل الصوره", "حفظ الصوره", "تنزيل", "تحميل", "حفظ"
+            )) return true
+        return (value.contains("download") || value.contains("save") ||
+            value.contains("تنزيل") || value.contains("تحميل") || value.contains("حفظ")) &&
+            (value.contains("image") || value.contains("picture") || value.contains("صوره") ||
+                value == "download" || value == "save")
+    }
 
     fun clickCandidate(text: String, id: String, target: String): Boolean {
         val value = ArabicText.normalize(text)
