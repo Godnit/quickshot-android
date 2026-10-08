@@ -57,6 +57,9 @@ class AppCatalog(private val context: Context) {
         return apps.firstOrNull { it.packageName == match.packageName }
     }
 
+    fun findPackage(packageName: String): InstalledApp? =
+        all().firstOrNull { it.packageName == packageName }
+
     /**
      * يختار تطبيق إدارة الملفات الحقيقي.  ACTION_OPEN_DOCUMENT هو منتقي ملفات
      * يبدأ غالبًا من Downloads، لذلك لا نستخدمه كاختيار أول للأمر «افتح الملفات».
@@ -82,7 +85,12 @@ class AppCatalog(private val context: Context) {
                 val preferred = fileManagerPackages.indexOfFirst { candidate -> candidate.equals(pkg, ignoreCase = true) }
                 if (preferred < 0) Int.MAX_VALUE else preferred
             }.thenBy { it.loadLabel(pm).toString() }
-        ).firstNotNullOfOrNull(::fromHandler)?.let { return it }
+        ).firstNotNullOfOrNull(::fromHandler)?.let { handler ->
+            // إذا كان للتطبيق اختصار تشغيل عادي فله أولوية؛ بعض نسخ DocumentsUI
+            // تستقبل CATEGORY_APP_FILES لكنها تعيد فتح آخر مجلد (غالبًا التنزيلات).
+            val launcher = pm.getLaunchIntentForPackage(handler.packageName)
+            return if (launcher != null) handler.copy(intent = launcher) else handler
+        }
 
         // بعض واجهات الشركات لا تعلن CATEGORY_APP_FILES لكنها تملك اختصار تشغيل.
         for (pkg in fileManagerPackages) {
