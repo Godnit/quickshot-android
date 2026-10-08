@@ -63,7 +63,6 @@ class AppCatalog(private val context: Context) {
         val apps = all()
         val match = AppNameMatcher.find(query, apps.map { AppName(it.packageName, it.label) })
         if (match != null) apps.firstOrNull { it.packageName == match.packageName }?.let { return it }
-        val normalizedQuery = ArabicText.normalize(query)
         return apps.firstOrNull { app -> naturalAliases(app).any { ArabicText.normalize(it) == normalizedQuery } }
     }
 
