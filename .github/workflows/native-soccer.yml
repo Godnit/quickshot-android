@@ -1,0 +1,39 @@
+name: Build Native Soccer APK
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'native-soccer/**'
+      - '.github/workflows/native-soccer.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install Android SDK packages
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - name: Build APK
+        working-directory: native-soccer
+        run: |
+          gradle --no-daemon :app:assembleDebug
+          mkdir -p build
+          cp app/build/outputs/apk/debug/app-debug.apk build/Soccer3D-Native.apk
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Soccer3D-Native
+          path: native-soccer/build/Soccer3D-Native.apk
