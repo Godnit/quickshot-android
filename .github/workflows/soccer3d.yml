@@ -55,5 +55,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Soccer3D-Android
-          path: build/Soccer3D.apk
+          name: Soccer3D-Android-lite
+          path: build/Soccer3D-lite.apk
