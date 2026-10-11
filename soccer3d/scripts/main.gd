@@ -14,6 +14,7 @@ var hud: Label
 var menu: Panel
 var status: Label
 var joystick := Vector2.ZERO
+var touch_dir := Vector2.ZERO
 var field_size := Vector2(28.0, 18.0)
 var team_colors = [Color("#1e6cff"), Color("#f04444"), Color("#f1c40f"), Color("#2ecc71")]
 
@@ -65,6 +66,12 @@ func _build_hud() -> void:
     var pause:=Button.new(); pause.text="⚙ الإعدادات"; pause.position=Vector2(1040,24); pause.size=Vector2(200,52); pause.pressed.connect(_toggle_menu); layer.add_child(pause)
     for spec in [["تمريرة",Vector2(1040,585),"pass"],["تسديدة",Vector2(1150,505),"shoot"],["تزحلق",Vector2(1035,505),"tackle"]]:
         var b:=Button.new(); b.text=spec[0]; b.position=spec[1]; b.size=Vector2(115,70); b.add_theme_font_size_override("font_size",18); b.button_down.connect(func(): _action(spec[2])); layer.add_child(b)
+    var dpad=[["▲",Vector2(165,505),Vector2(0,-1)],["◀",Vector2(85,575),Vector2(-1,0)],["▶",Vector2(245,575),Vector2(1,0)],["▼",Vector2(165,645),Vector2(0,1)]]
+    for spec in dpad:
+        var db:=Button.new(); db.text=spec[0]; db.position=spec[1]; db.size=Vector2(70,60); db.add_theme_font_size_override("font_size",24)
+        db.button_down.connect(func(): _set_touch_dir(spec[2]))
+        db.button_up.connect(func(): _set_touch_dir(Vector2.ZERO))
+        layer.add_child(db)
     var hint:=Label.new(); hint.text="الحركة: WASD  •  J تمريرة  K تسديدة  L تزحلق"; hint.position=Vector2(32,665); hint.add_theme_color_override("font_color",Color.WHITE); layer.add_child(hint)
 
 func _toggle_menu() -> void:
@@ -73,6 +80,9 @@ func _toggle_menu() -> void:
     var title:=Label.new(); title.text="⚽ Soccer 3D"; title.position=Vector2(150,28); title.add_theme_font_size_override("font_size",30); menu.add_child(title)
     var t:=Label.new(); t.text="اختيار الفريق\n\nالأزرق  •  الأحمر  •  الأصفر  •  الأخضر\n\nالجودة: تلقائية (متوافقة مع Android 8.1)"; t.position=Vector2(55,92); t.add_theme_font_size_override("font_size",20); menu.add_child(t)
     var b:=Button.new(); b.text="متابعة المباراة"; b.position=Vector2(145,285); b.size=Vector2(210,58); b.pressed.connect(_toggle_menu); menu.add_child(b)
+
+func _set_touch_dir(value: Vector2) -> void:
+    touch_dir=value
 
 func _action(kind: String) -> void:
     if not controlled or not ball: return
@@ -85,6 +95,7 @@ func _physics_process(delta: float) -> void:
     if not playing: return
     elapsed += delta; match_seconds=max(0.0,match_seconds-delta)
     var input_vec=Input.get_vector("move_left","move_right","move_up","move_down")
+    if touch_dir.length()>0.1: input_vec=touch_dir
     controlled.velocity=Vector3(input_vec.x*6.0,controlled.velocity.y,input_vec.y*6.0); controlled.move_and_slide(); controlled.position.x=clamp(controlled.position.x,-13.0,13.0); controlled.position.z=clamp(controlled.position.z,-8.0,8.0)
     for p in players:
         if p!=controlled: _ai_home(p,delta)
