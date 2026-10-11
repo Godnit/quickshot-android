@@ -51,7 +51,7 @@ jobs:
           GODOT_BIN="$HOME/godot/Godot_v4.2.2-stable_linux.x86_64"
           chmod +x "$GODOT_BIN"
           pkill -f adb || true
-          timeout 180 "$GODOT_BIN" --headless --path soccer3d --verbose --export-debug "Android" "$GITHUB_WORKSPACE/build/Soccer3D.apk"
+          timeout 180 "$GODOT_BIN" --headless --path soccer3d --verbose --export-release "Android" "$GITHUB_WORKSPACE/build/Soccer3D-lite.apk"
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
