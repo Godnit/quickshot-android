@@ -30,6 +30,7 @@ jobs:
           SDK_PATH="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           JAVA_PATH="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"
           echo "SDK_PATH=$SDK_PATH JAVA_PATH=$JAVA_PATH"
+          yes | sdkmanager --sdk_root="$SDK_PATH" "platform-tools" "build-tools;33.0.2" "platforms;android-33" || true
           keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
           cat > "$HOME/.config/godot/editor_settings-4.tres" <<EOF
           [gd_resource type="EditorSettings" format=3]
@@ -47,7 +48,6 @@ jobs:
           mkdir -p build
           GODOT_BIN="$HOME/godot/Godot_v4.2.2-stable_linux.x86_64"
           chmod +x "$GODOT_BIN"
-          "$GODOT_BIN" --headless --path soccer3d --editor --install-android-build-template
           "$GODOT_BIN" --headless --path soccer3d --editor --quit
           "$GODOT_BIN" --headless --path soccer3d --verbose --export-debug "Android" "$GITHUB_WORKSPACE/build/Soccer3D.apk"
       - name: Upload APK
