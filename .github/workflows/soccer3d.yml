@@ -30,7 +30,9 @@ jobs:
           SDK_PATH="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           JAVA_PATH="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"
           echo "SDK_PATH=$SDK_PATH JAVA_PATH=$JAVA_PATH"
-          yes | sdkmanager --sdk_root="$SDK_PATH" "platform-tools" "build-tools;33.0.2" "platforms;android-33" || true
+          SDKMANAGER="$SDK_PATH/cmdline-tools/latest/bin/sdkmanager"
+          if [ -x "$SDKMANAGER" ]; then yes | "$SDKMANAGER" --sdk_root="$SDK_PATH" "platform-tools" "build-tools;33.0.2" "platforms;android-33" || true; fi
+          find "$SDK_PATH" -maxdepth 4 -type f \( -name adb -o -name apksigner \) -print || true
           keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
           cat > "$HOME/.config/godot/editor_settings-4.tres" <<EOF
           [gd_resource type="EditorSettings" format=3]
